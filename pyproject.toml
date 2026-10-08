@@ -1,0 +1,63 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "monkleads"
+version = "1.0.0"
+description = "Local lead finder for The Monk Press: discover, audit, score, and draft outreach for small businesses in Rensselaer County, NY."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "Jeremy Monk" }]
+dependencies = [
+    "httpx>=0.27,<1",
+    "tenacity>=8.2",
+    "sqlalchemy>=2.0",
+    "typer>=0.12",
+    "rich>=13.7",
+    "pyyaml>=6.0",
+    "pydantic>=2.5",
+    "beautifulsoup4>=4.12",
+    "openpyxl>=3.1",
+    "jinja2>=3.1",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+screenshots = ["playwright>=1.44"]
+llm = ["anthropic>=1.0"]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "mypy>=1.10",
+    "ruff>=0.5",
+    "types-PyYAML",
+]
+all = ["monkleads[screenshots,llm]"]
+
+[project.scripts]
+monkleads = "monkleads.cli:app"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/monkleads"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM"]
+ignore = ["E501"]  # the formatter wraps code; long user-facing strings are fine
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+plugins = ["pydantic.mypy"]
+ignore_missing_imports = true

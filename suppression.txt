@@ -1,0 +1,8 @@
+# Suppression list: businesses that must never appear in exports or reports.
+# Checked before every export. One entry per line. Formats:
+#   place:<google place_id>
+#   phone:<phone number, any format>
+#   domain:<example.com>
+#   name:<business name>
+# A bare value is auto-detected (place id, phone, domain, or name).
+# `monkleads status <id> do_not_contact` and `monkleads suppress` append here automatically.

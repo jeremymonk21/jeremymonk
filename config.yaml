@@ -1,0 +1,233 @@
+# The Monk Press lead finder configuration.
+# Every number that affects cost or scoring lives here so it can be tuned without code changes.
+
+# ---------------------------------------------------------------------------
+# Where to look. Coordinates are approximate town centers.
+# `extended: true` towns (Albany / Saratoga counties) are only searched when
+# discovery.include_extended_area is true or --extended is passed.
+# ---------------------------------------------------------------------------
+towns:
+  - { name: Troy,                   lat: 42.7284, lng: -73.6918, radius_km: 6 }
+  - { name: Rensselaer,             lat: 42.6426, lng: -73.7429, radius_km: 4 }
+  - { name: East Greenbush,         lat: 42.5906, lng: -73.7032, radius_km: 6 }
+  - { name: North Greenbush,        lat: 42.6728, lng: -73.6668, radius_km: 6 }
+  - { name: Brunswick,              lat: 42.7495, lng: -73.5880, radius_km: 7 }
+  - { name: Schodack,               lat: 42.5420, lng: -73.6800, radius_km: 8 }
+  - { name: Castleton-on-Hudson,    lat: 42.5187, lng: -73.7512, radius_km: 3 }
+  - { name: Hoosick Falls,          lat: 42.9006, lng: -73.3515, radius_km: 5 }
+  - { name: Sand Lake,              lat: 42.6365, lng: -73.5404, radius_km: 7 }
+  - { name: Averill Park,           lat: 42.6353, lng: -73.5537, radius_km: 4 }
+  - { name: Nassau,                 lat: 42.5156, lng: -73.6101, radius_km: 6 }
+  - { name: Poestenkill,            lat: 42.6901, lng: -73.5640, radius_km: 6 }
+  - { name: Schaghticoke,           lat: 42.9000, lng: -73.5900, radius_km: 7 }
+  - { name: Valley Falls,           lat: 42.9006, lng: -73.5637, radius_km: 3 }
+  - { name: Pittstown,              lat: 42.8600, lng: -73.5000, radius_km: 8 }
+  - { name: Grafton,                lat: 42.7700, lng: -73.4500, radius_km: 8 }
+  - { name: Berlin,                 lat: 42.6900, lng: -73.3700, radius_km: 8 }
+  - { name: Stephentown,            lat: 42.5500, lng: -73.3800, radius_km: 8 }
+  - { name: Petersburgh,            lat: 42.7500, lng: -73.3400, radius_km: 7 }
+  # Optional radius into Albany and Saratoga counties
+  - { name: Albany,           county: Albany,   lat: 42.6526, lng: -73.7562, radius_km: 6, extended: true }
+  - { name: Cohoes,           county: Albany,   lat: 42.7742, lng: -73.7001, radius_km: 4, extended: true }
+  - { name: Watervliet,       county: Albany,   lat: 42.7301, lng: -73.7012, radius_km: 3, extended: true }
+  - { name: Colonie,          county: Albany,   lat: 42.7179, lng: -73.8335, radius_km: 7, extended: true }
+  - { name: Waterford,        county: Saratoga, lat: 42.7926, lng: -73.6812, radius_km: 4, extended: true }
+  - { name: Mechanicville,    county: Saratoga, lat: 42.9028, lng: -73.6873, radius_km: 4, extended: true }
+  - { name: Clifton Park,     county: Saratoga, lat: 42.8656, lng: -73.7710, radius_km: 7, extended: true }
+
+# ---------------------------------------------------------------------------
+# What to look for. `query` is sent to Places Text Search as "<query> in <town>, NY".
+# group: food | beauty | trades | auto | retail | services | other  (drives tier suggestions)
+# fit:   high | medium | low                                          (drives the category bonus)
+# place_types are only used when discovery.mode is "nearby".
+# ---------------------------------------------------------------------------
+categories:
+  - { key: restaurant,  query: restaurant,           group: food,     fit: high,   place_types: [restaurant] }
+  - { key: cafe,        query: cafe,                 group: food,     fit: high,   place_types: [cafe, coffee_shop] }
+  - { key: bakery,      query: bakery,               group: food,     fit: high,   place_types: [bakery] }
+  - { key: pizza,       query: pizza,                group: food,     fit: high,   place_types: [pizza_restaurant] }
+  - { key: salon,       query: hair salon,           group: beauty,   fit: high,   place_types: [hair_salon, beauty_salon] }
+  - { key: barber,      query: barber shop,          group: beauty,   fit: high,   place_types: [barber_shop] }
+  - { key: nail_salon,  query: nail salon,           group: beauty,   fit: medium, place_types: [nail_salon] }
+  - { key: contractor,  query: general contractor,   group: trades,   fit: high,   place_types: [general_contractor] }
+  - { key: plumber,     query: plumber,              group: trades,   fit: high,   place_types: [plumber] }
+  - { key: electrician, query: electrician,          group: trades,   fit: high,   place_types: [electrician] }
+  - { key: roofer,      query: roofing contractor,   group: trades,   fit: high,   place_types: [roofing_contractor] }
+  - { key: landscaper,  query: landscaping service,  group: trades,   fit: high,   place_types: [] }
+  - { key: auto_repair, query: auto repair shop,     group: auto,     fit: high,   place_types: [car_repair] }
+  - { key: retail,      query: gift shop,            group: retail,   fit: medium, place_types: [gift_shop, store] }
+  - { key: florist,     query: florist,              group: retail,   fit: medium, place_types: [florist] }
+  - { key: boutique,    query: clothing boutique,    group: retail,   fit: medium, place_types: [clothing_store] }
+  - { key: pet_groomer, query: pet groomer,          group: services, fit: medium, place_types: [pet_care] }
+  - { key: cleaning,    query: cleaning service,     group: services, fit: medium, place_types: [] }
+
+discovery:
+  mode: text                 # "text" (Text Search, paginated) or "nearby" (Nearby Search by place type)
+  max_pages_per_query: 2     # 1-3; each page is up to 20 results and is billed as one request
+  page_size: 20
+  include_extended_area: false
+  origin: Troy               # distances are measured from this town
+  max_distance_miles: 30     # results farther than this from the origin are dropped
+  concurrency: 4
+  region_code: us
+
+chains:
+  min_locations: 3           # same name at this many different addresses => treated as a chain
+  locator_url_patterns: ["/locations/", "/location/", "/stores/", "/store/", "storelocator", "store-locator", "/find-a-", "locations."]
+  blocklist:
+    - McDonald's
+    - Burger King
+    - Wendy's
+    - Taco Bell
+    - Subway
+    - Dunkin
+    - Starbucks
+    - Stewart's Shops
+    - Cumberland Farms
+    - Domino's
+    - Pizza Hut
+    - Papa John's
+    - Little Caesars
+    - Panera
+    - Chipotle
+    - Applebee's
+    - Olive Garden
+    - Dairy Queen
+    - Arby's
+    - KFC
+    - Five Guys
+    - Moe's Southwest Grill
+    - Great Clips
+    - Supercuts
+    - Sport Clips
+    - Fantastic Sams
+    - Ulta
+    - Jiffy Lube
+    - Valvoline
+    - Midas
+    - Meineke
+    - Firestone
+    - Monro
+    - Mavis
+    - Pep Boys
+    - AutoZone
+    - Advance Auto Parts
+    - NAPA Auto Parts
+    - CVS
+    - Walgreens
+    - Rite Aid
+    - Dollar General
+    - Dollar Tree
+    - Family Dollar
+    - Walmart
+    - Target
+    - Home Depot
+    - Lowe's
+    - Tractor Supply
+    - Price Chopper
+    - Market 32
+    - Hannaford
+    - ShopRite
+    - Planet Fitness
+    - H&R Block
+    - Jackson Hewitt
+    - 1-800-Flowers
+    - Edible Arrangements
+    - ServiceMaster
+    - Molly Maid
+    - Petco
+    - PetSmart
+
+audit:
+  stale_after_days: 30       # leads audited more recently than this are skipped on incremental runs
+  concurrency: 5
+  per_host_min_interval_s: 1.5
+  request_timeout_s: 15
+  max_html_bytes: 2000000
+  user_agent: "MonkPressSiteCheck/1.0 (+https://themonkpress.com; one-person local web studio; polite single-page check)"
+  robots_user_agent: MonkPressSiteCheck
+  run_pagespeed: true
+  pagespeed_timeout_s: 90
+  pagespeed_concurrency: 3
+  screenshots: true
+  screenshot_device: "iPhone 13"
+  screenshot_concurrency: 2
+  chromium_executable: null      # set to a Chrome/Chromium path if `playwright install chromium` isn't an option
+  copyright_stale_age_years: 6   # 2026 - 6 = 2020, so ©2019 or earlier is flagged
+  old_wordpress_major: 6         # WordPress < 6.x is flagged as out of date
+  social_domains: [facebook.com, fb.com, fb.me, m.facebook.com, instagram.com, linktr.ee, tiktok.com, yelp.com, x.com, twitter.com]
+  dead_platform_domains: [business.site]   # Google's free Business Profile sites were shut down in 2024
+
+scoring:
+  weights:
+    no_website: 60
+    social_only: 45
+    broken_site: 55
+    poor_mobile_speed: 25        # PageSpeed mobile performance below poor_speed_below
+    mediocre_mobile_speed: 10    # below mediocre_speed_below
+    no_https: 12
+    ssl_invalid: 15
+    no_https_redirect: 3
+    no_viewport: 15
+    stale_copyright: 10
+    outdated_platform: 10
+    old_wordpress: 8
+    outdated_markup: 10
+    missing_title_or_description: 5
+    no_tel_link: 6
+    no_contact_form: 4
+    no_hours: 4
+    no_map: 2
+    reputation_bonus: 12         # strong Google reputation AND a weak/missing site
+    category_fit_high: 8
+    category_fit_medium: 4
+    category_fit_low: 0
+    low_review_penalty: -5       # fewer than low_review_count reviews: may be inactive
+    temporarily_closed_penalty: -15
+  reputation_min_rating: 4.3
+  reputation_min_reviews: 25
+  weak_site_threshold: 20        # site-problem points at or above this count as a "weak site"
+  poor_speed_below: 50
+  mediocre_speed_below: 70
+  distance_free_miles: 5
+  distance_penalty_per_mile: 0.5
+  distance_penalty_max: 15
+  low_review_count: 3
+  custom_min_reviews: 200        # busy business + booking/ordering integrations => suggest Custom
+  standard_min_reviews: 50       # established service business => suggest Standard over Starter
+
+sender:                          # used in every draft; CAN-SPAM requires a real identity and postal address
+  name: Jeremy Monk
+  business: The Monk Press
+  website: https://themonkpress.com
+  email: ""                      # fill in
+  phone: ""                      # fill in
+  physical_address: ""           # REQUIRED before email drafts are generated (street or registered PO box)
+  home_area: Rensselaer County
+
+llm:
+  enabled: false                 # or pass --llm on the command line
+  model: claude-opus-5-5
+  effort: low
+  max_concurrency: 3
+  est_input_tokens: 900          # used only for the pre-run cost estimate
+  est_output_tokens: 600
+  price_input_per_mtok: 4.00
+  price_output_per_mtok: 20.00
+
+costs:
+  # Requesting website, phone, rating and hours puts Places calls in the "Enterprise" SKU.
+  # Verify current prices at https://developers.google.com/maps/billing-and-pricing/pricing
+  places_text_search_per_1000: 35.00
+  places_nearby_search_per_1000: 35.00
+  confirm_over_usd: 5.00          # ask before any run estimated above this
+
+cache:
+  places_ttl_days: 30
+  pagespeed_ttl_days: 7
+  llm_ttl_days: 90
+
+output:
+  data_dir: data                 # relative paths resolve against this config file's folder
+  suppression_file: suppression.txt
+  report_top_n: 25

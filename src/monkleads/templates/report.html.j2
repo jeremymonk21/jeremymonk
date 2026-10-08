@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lead Report — {{ sender.business }}</title>
+<style>
+  :root { --ink:#1f2937; --muted:#6b7280; --line:#e5e7eb; --bg:#f9fafb; --card:#fff;
+          --hot:#b91c1c; --warm:#b45309; --cool:#047857; --accent:#1f5fbf; }
+  * { box-sizing: border-box; }
+  body { margin:0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+         color: var(--ink); background: var(--bg); }
+  header { padding: 24px 16px 8px; max-width: 1100px; margin: 0 auto; }
+  header h1 { margin: 0 0 4px; font-size: 24px; }
+  header p { margin: 0; color: var(--muted); }
+  main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 48px; }
+  .lead { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+          margin: 16px 0; display: grid; grid-template-columns: 200px 1fr; overflow: hidden;
+          break-inside: avoid; }
+  .shot { background: #111; display:flex; align-items:flex-start; justify-content:center; }
+  .shot img { width: 100%; height: auto; display:block; }
+  .shot .none { color:#9ca3af; font-size: 13px; padding: 24px 12px; text-align:center; }
+  .body { padding: 16px 20px; min-width: 0; }
+  .top { display:flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+  .score { font-weight: 700; font-size: 22px; min-width: 52px; text-align:center; border-radius: 8px;
+           padding: 2px 8px; color:#fff; }
+  .s-hot { background: var(--hot); } .s-warm { background: var(--warm); } .s-cool { background: var(--cool); }
+  h2 { margin: 0; font-size: 19px; }
+  .meta { color: var(--muted); font-size: 13px; margin: 4px 0 10px; }
+  .meta a { color: var(--accent); }
+  .pill { display:inline-block; font-size: 12px; padding: 1px 8px; border-radius: 999px;
+          background:#eef2ff; color:#3730a3; margin-right: 6px; }
+  .pill.site { background:#fef3c7; color:#92400e; }
+  h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+       margin: 14px 0 6px; }
+  ol { margin: 0; padding-left: 20px; }
+  .opener { background: #f3f4f6; border-left: 3px solid var(--accent); padding: 10px 12px;
+            border-radius: 4px; white-space: pre-wrap; }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; color: var(--accent); font-size: 14px; }
+  table.reasons { border-collapse: collapse; font-size: 13px; margin-top: 6px; }
+  table.reasons td { padding: 2px 10px 2px 0; vertical-align: top; }
+  td.pts { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  pre.email { white-space: pre-wrap; font: 13px/1.45 ui-monospace, Menlo, Consolas, monospace;
+              background:#f9fafb; border:1px solid var(--line); padding: 10px; border-radius: 6px; }
+  .empty { padding: 40px; text-align:center; color: var(--muted); }
+  @media (max-width: 640px) { .lead { grid-template-columns: 1fr; } .shot img { max-height: 360px; object-fit: cover; object-position: top; } }
+  @media print { body { background:#fff; } details { display:none; } .lead { border-color:#ccc; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Top {{ leads|length }} leads</h1>
+  <p>{{ sender.business }} · generated {{ generated }}{% if suppressed %} · {{ suppressed }} suppressed lead(s) hidden{% endif %} · drafts only, nothing has been sent</p>
+</header>
+<main>
+{% if not leads %}
+  <div class="empty">No scored leads yet. Run <code>monkleads run</code> (or discover → audit → score).</div>
+{% endif %}
+{% for r in leads %}
+  <section class="lead" id="lead-{{ r.id }}">
+    <div class="shot">
+      {% if shots.get(r.id) %}
+        <a href="{{ shots[r.id] }}"><img src="{{ shots[r.id] }}" alt="Phone screenshot of {{ r.name }}" loading="lazy"></a>
+      {% else %}
+        <div class="none">{{ r|site_label }}<br>(no screenshot)</div>
+      {% endif %}
+    </div>
+    <div class="body">
+      <div class="top">
+        <span class="score {{ 's-hot' if r.score >= 70 else ('s-warm' if r.score >= 45 else 's-cool') }}">{{ r.score }}</span>
+        <h2>{{ loop.index }}. {{ r.name }}</h2>
+      </div>
+      <div class="meta">
+        <span class="pill">{{ r.tier }}</span><span class="pill site">{{ r|site_label }}</span>
+        {{ (r.category or '')|replace('_', ' ') }}{% if r.town %} · {{ r.town }}{% endif %}
+        {% if r.rating %} · {{ '%.1f'|format(r.rating) }}★ ({{ r.review_count or 0 }} reviews){% endif %}
+        {% if r.phone %} · {{ r.phone }}{% endif %}
+        {% if r.performance is not none %} · mobile speed {{ r.performance }}/100{% endif %}
+        <br>
+        {% if r.website|safe_url %}<a href="{{ r.website|safe_url }}" rel="noopener noreferrer" target="_blank">{{ r.website }}</a> · {% endif %}
+        {% if r.maps_url|safe_url %}<a href="{{ r.maps_url|safe_url }}" rel="noopener noreferrer" target="_blank">Google Maps</a> · {% endif %}
+        ID {{ r.id }} · status: {{ r.status }}
+      </div>
+
+      <h3>Top problems</h3>
+      {% if r.problems %}
+        <ol>{% for p in r.problems %}<li>{{ p }}</li>{% endfor %}</ol>
+      {% else %}
+        <p>No major problems found. Possibly a lower-priority lead.</p>
+      {% endif %}
+
+      <h3>Suggested plan</h3>
+      <p>{{ r.tier }}: {{ r.tier_reason }}</p>
+
+      <h3>Opener {% if r.opener_source == 'llm' %}(drafted with Claude){% endif %}</h3>
+      <div class="opener">{{ r.opener }}</div>
+
+      <details>
+        <summary>Why this score</summary>
+        <table class="reasons">
+          {% for reason in r.reasons %}
+          <tr><td class="pts">{{ '%+g'|format(reason.points) }}</td><td>{{ reason.detail }}</td></tr>
+          {% endfor %}
+          <tr><td class="pts"><strong>{{ r.score }}</strong></td><td><strong>total (capped 0–100)</strong></td></tr>
+        </table>
+      </details>
+      {% if r.email_body %}
+      <details>
+        <summary>Email draft (review before sending)</summary>
+        <pre class="email">Subject: {{ r.email_subject }}
+
+{{ r.email_body }}</pre>
+      </details>
+      {% endif %}
+      {% if r.notes %}
+      <details open>
+        <summary>Notes</summary>
+        <pre class="email">{{ r.notes }}</pre>
+      </details>
+      {% endif %}
+    </div>
+  </section>
+{% endfor %}
+</main>
+<footer style="max-width:1100px;margin:0 auto;padding:0 16px 32px;color:#6b7280;font-size:12px">
+  Business listing data from Google (Places API). Ratings and reviews are Google's. Site checks and scores by {{ sender.business }}.
+</footer>
+</body>
+</html>
