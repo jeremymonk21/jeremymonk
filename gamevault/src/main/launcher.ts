@@ -85,7 +85,13 @@ function spawnDetached(file: string, args: string[], cwd: string): Promise<Launc
   return new Promise((resolve) => {
     let settled = false
     try {
-      const child = spawn(file, args, { cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: /\.(bat|cmd)$/i.test(file) })
+      // Batch files must run through cmd.exe; quote the path and arguments ourselves because
+      // Node does not quote them when `shell` is enabled (paths like "C:\Program Files\..." would break).
+      const useShell = /\.(bat|cmd)$/i.test(file)
+      const q = (s: string): string => (/[\s"&|<>^]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s)
+      const child = useShell
+        ? spawn(q(file), args.map(q), { cwd, detached: true, stdio: 'ignore', windowsHide: false, shell: true })
+        : spawn(file, args, { cwd, detached: true, stdio: 'ignore', windowsHide: false })
       child.once('error', (e) => {
         if (settled) return
         settled = true

@@ -306,7 +306,8 @@ async function openGame(win, title) {
 
   // ---------------- Launching ----------------
   const marker = path.join(work, 'launched.txt')
-  const exe = path.join(work, process.platform === 'win32' ? 'game.cmd' : 'game.sh')
+  fs.mkdirSync(path.join(work, 'My Games'), { recursive: true }) // path with a space, like "Program Files"
+  const exe = path.join(work, 'My Games', process.platform === 'win32' ? 'game.cmd' : 'game.sh')
   fs.writeFileSync(exe, process.platform === 'win32' ? `@echo off\r\necho %* > "${marker}"\r\n` : `#!/bin/sh\necho "$@" > "${marker}"\n`)
   fs.chmodSync(exe, 0o755)
   await openGame(win, 'Hades')
