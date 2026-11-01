@@ -347,3 +347,12 @@ code, .mono { font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }
+
+/* online details lookup */
+.lookup { border: 1px dashed var(--border-strong); border-radius: var(--radius); padding: 10px 12px; background: rgba(124,108,255,.05); }
+.lookup-hits { display: grid; gap: 6px; margin-top: 10px; }
+.lookup-hit { display: flex; align-items: center; gap: 12px; width: 100%; padding: 6px 10px 6px 6px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg-2); cursor: pointer; text-align: left; transition: border-color .15s, background .15s; }
+.lookup-hit:hover { border-color: var(--accent); background: var(--panel-2); }
+.lookup-hit img { width: 92px; height: 34px; object-fit: cover; border-radius: 4px; background: var(--panel); flex: none; }
+.lookup-hit .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lookup-hit .use { color: var(--accent-2); font-weight: 600; font-size: 13px; }

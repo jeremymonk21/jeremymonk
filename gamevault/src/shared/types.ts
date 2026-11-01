@@ -138,6 +138,20 @@ export interface GameInput {
   copies: CopyInput[]
   imageFiles: string[]
   lockedFields?: MetadataField[]
+  /** Fields whose value came straight from an online lookup; these are not locked as manual edits. */
+  sourceFields?: MetadataField[]
+}
+
+export interface LookupResult {
+  appId: number
+  title: string
+  description: string
+  developer: string
+  publisher: string
+  releaseDate: string
+  genres: string[]
+  coverFile: string | null
+  coverPortrait: boolean
 }
 
 /** Quick, personal edits that never touch imported metadata. */

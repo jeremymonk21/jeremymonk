@@ -339,7 +339,9 @@ export function saveGame(db: DB, input: GameInput, opts: { source?: Game['source
       const before = getGame(db, id)
       if (!before) throw new Error('This game no longer exists.')
       const locked = new Set<MetadataField>(input.lockedFields ?? before.lockedFields)
-      if (before.source === 'steam') {
+      // Games linked to Steam (imported, or details looked up from the Steam Store) remember
+      // which fields the user changed by hand so refreshes never overwrite them.
+      if (before.source === 'steam' || before.steamAppId || input.steamAppId) {
         const genreNames = (ids: number[]): string =>
           listTags(db, 'genres')
             .filter((t) => ids.includes(t.id))
@@ -354,6 +356,7 @@ export function saveGame(db: DB, input: GameInput, opts: { source?: Game['source
         if (before.releaseDate !== input.releaseDate) locked.add('releaseDate')
         if (genreNames(before.genreIds) !== newGenres) locked.add('genres')
         if (before.coverFile !== input.coverFile) locked.add('cover')
+        for (const f of input.sourceFields ?? []) locked.delete(f)
       }
       db.prepare(
         `UPDATE games SET title=?, description=?, developer=?, publisher=?, release_date=?, cover_file=?, cover_fit=?, cover_pos_x=?, cover_pos_y=?, cover_zoom=?,

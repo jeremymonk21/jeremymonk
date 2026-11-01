@@ -4,7 +4,7 @@ import { join } from 'path'
 import { pathToFileURL } from 'url'
 import * as db from './db'
 import { cleanupImages, downloadImage, importImageFile, initImages, resolveImage, IMAGE_EXTENSIONS } from './images'
-import { artworkUrls, detectSteamPath, getOwnedGames, getStoreDetails, installedSteamApps, resolveSteamId, SteamError } from './steam'
+import { artworkUrls, detectSteamPath, getOwnedGames, getStoreDetails, installedSteamApps, resolveSteamId, searchStore, SteamError } from './steam'
 import { checkCopy, launchCopy, openSteamInstall } from './launcher'
 import { buildCsv, createBackup, stageRestore, swapInStaged } from './backup'
 import { removeSampleTags, seedSamplesIfFirstRun } from './samples'
@@ -14,6 +14,7 @@ import type {
   GamePatch,
   ImportProgress,
   Library,
+  LookupResult,
   MetadataField,
   SteamConfig,
   SteamImportOptions,
@@ -234,6 +235,25 @@ function registerIpc(): void {
     runImport(items, opts, true)
     return true
   })
+  // ---- online details lookup (Steam Store catalogue; no key or ownership needed) ----
+  handle('meta:search', (term: string) => searchStore(term))
+  handle('meta:details', async (appId: number): Promise<LookupResult> => {
+    const d = await getStoreDetails(appId)
+    if (!d) throw new Error('The Steam Store has no details for this game.')
+    const cover = await fetchCover(appId, d.headerImage)
+    return {
+      appId,
+      title: d.title ?? '',
+      description: d.description ?? '',
+      developer: d.developer ?? '',
+      publisher: d.publisher ?? '',
+      releaseDate: d.releaseDate ?? '',
+      genres: d.genres ?? [],
+      coverFile: cover?.file ?? null,
+      coverPortrait: cover?.portrait ?? false
+    }
+  })
+
   handle('steam:cancel', () => {
     importCancelled = true
   })

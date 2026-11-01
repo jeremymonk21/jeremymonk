@@ -9,6 +9,7 @@ import type {
   LaunchCheck,
   LaunchResult,
   Library,
+  LookupResult,
   MetadataField,
   SteamConfig,
   SteamImportOptions,
@@ -53,6 +54,9 @@ const api = {
   checkLaunch: (copyId: number) => call<LaunchCheck>('launch:check', copyId),
   launch: (copyId: number) => call<LaunchResult>('launch:run', copyId),
   steamInstall: (appId: number) => call<void>('launch:steamInstall', appId),
+
+  searchDetails: (term: string) => call<Array<{ appId: number; name: string; thumb: string }>>('meta:search', term),
+  lookupDetails: (appId: number) => call<LookupResult>('meta:details', appId),
 
   steamGetConfig: () => call<SteamConfig>('steam:getConfig'),
   steamSetConfig: (cfg: { apiKey?: string | null; steamId?: string; steamPath?: string | null }) => call<boolean>('steam:setConfig', cfg),

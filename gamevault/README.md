@@ -55,6 +55,7 @@ npm run dev        # hot-reloading app window
 | Task | How |
 | --- | --- |
 | Add a game | **Add Game** (sidebar) or `Ctrl+N` |
+| Fill in details automatically | Type the title in **Add Game**. GameVault searches the Steam Store catalogue and lists matches. Click the right one to fill in the description, developer, publisher, release date, genres and box art. Works for games you own anywhere (disc, other stores, downloads), with no Steam account or key needed. |
 | Edit any metadata | Open a game, then **Edit** |
 | Box art | Upload it or drag a file onto the frame in the editor. Drag the image to reposition it, use **Zoom**, or switch to **Show whole**. |
 | More images | **Upload images…** in the editor. Any of them can become the box art. |
@@ -86,6 +87,7 @@ GameVault works fully without Steam. It uses only Valve's supported, documented 
 | Custom profile URLs | Steam Web API `ISteamUser/ResolveVanityURL` | Same key |
 | Description, genres, developer, publisher, release date | Steam Store `appdetails` endpoint | None, but it is rate-limited, so GameVault spaces its requests about 1.6 s apart |
 | Box art | Steam CDN portrait capsule (`library_600x900`), falling back to the header image | None. Images are downloaded once and cached in the data folder. |
+| Details lookup when adding any game | Steam Store `storesearch` + `appdetails` (public catalogue) | None. Your copy stays recorded as you entered it, not as a Steam purchase. Console-only games usually aren't listed, so enter those by hand. |
 | Installed games | Local `steamapps/libraryfolders.vdf` and `appmanifest_<appid>.acf` files | Steam installed on this PC. **No key needed.** |
 | Launching | `steam://rungameid/<appid>` | Steam client installed |
 
@@ -102,6 +104,7 @@ Without a key, you can still use **Import installed Steam games…**, which read
 
 - Games are matched by **Steam App ID**, so importing again updates existing entries instead of duplicating them.
 - These are **never touched** by a refresh: notes, ratings, favorites, play status, categories, other copies and launch settings.
+- A game whose details came from the lookup is linked by Steam App ID, so a later Steam import matches it instead of duplicating it, and **Refresh from Steam** works for it too.
 - Any metadata field you edit by hand (title, description, developer, publisher, release date, genres, box art) is **locked**, and later refreshes keep your version. The editor marks these fields with *"Kept on refresh · unlock"*.
 - If Steam has no store data for a game (delisted titles, tools and so on), it's still imported so you can fill in details and upload art yourself.
 - The API key is stored only on this PC, encrypted with your Windows account (DPAPI). It's kept out of the database and out of backups.
@@ -173,8 +176,9 @@ The end-to-end suite runs these checks against the real app, restarting it twice
 3. Data persists across restarts, including notes typed right before the window closed.
 4. System → genre → status, format and favorites filters combine correctly, along with search.
 5. A Steam preview import with selected games caches artwork locally and marks only installed games as launchable.
-6. A repeat import creates **no duplicates**, refreshes metadata, and keeps notes, ratings, favorites and hand-edited fields.
-7. A local program launches with arguments. A **missing launch file** is explained, Play is hidden, and the path can be removed.
-8. Backup, delete and restore round-trip correctly, including the safety backup. CSV export works.
+6. **Add Game** looks up details online for a PS5 disc game without marking it as a Steam purchase, and only the hand-edited field is protected from refreshes.
+7. A repeat import creates **no duplicates**, refreshes metadata, and keeps notes, ratings, favorites and hand-edited fields.
+8. A local program launches with arguments. A **missing launch file** is explained, Play is hidden, and the path can be removed.
+9. Backup, delete and restore round-trip correctly, including the safety backup. CSV export works.
 
 If you switch between running tests in plain Node and running the app, rebuild the native module for Electron with `npm run rebuild:native`.

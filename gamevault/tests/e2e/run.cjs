@@ -45,9 +45,18 @@ const server = http.createServer((req, res) => {
     return json({ response: { game_count: mock.owned.length, games: mock.owned } })
   }
   if (u.pathname.startsWith('/ISteamUser/ResolveVanityURL')) return json({ response: { success: 1, steamid: '76561198000000000' } })
+  if (u.pathname === '/api/storesearch/') {
+    const term = (u.searchParams.get('term') || '').toLowerCase()
+    const items = term.includes('lookup') ? [{ type: 'app', id: 40, name: 'Lookup Quest', tiny_image: '' }, { type: 'app', id: 41, name: 'Lookup Quest: Soundtrack', tiny_image: '' }] : []
+    return json({ total: items.length, items })
+  }
   if (u.pathname === '/api/appdetails') {
     const id = u.searchParams.get('appids')
     if (id === '30') return json({ [id]: { success: false } })
+    if (id === '40') return json({ [id]: { success: true, data: {
+      name: 'Lookup Quest', short_description: 'Found online.', developers: ['Quest Dev'], publishers: ['Quest Pub'],
+      release_date: { date: 'Jun 5, 2018' }, genres: [{ description: 'Adventure' }, { description: 'RPG' }]
+    } } })
     return json({ [id]: { success: true, data: {
       name: id === '10' ? 'Mock Game Alpha' : 'Mock Game Beta',
       short_description: id === '10' ? mock.description : 'Beta &amp; friends.',
@@ -56,7 +65,7 @@ const server = http.createServer((req, res) => {
       genres: [{ description: 'Action' }, { description: 'Indie' }]
     } } })
   }
-  if (u.pathname.startsWith('/cdn/10/library_600x900')) { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(PNG) }
+  if (/^\/cdn\/(10|40)\/library_600x900/.test(u.pathname)) { res.writeHead(200, { 'content-type': 'image/png' }); return res.end(PNG) }
   res.writeHead(404); res.end()
 })
 
@@ -314,6 +323,34 @@ async function openGame(win, title) {
   assert.equal(alpha.description, 'My own description.')
   log('Per-game "Refresh from Steam" keeps personal data')
 
+  // ---------------- Online details lookup for a game owned outside Steam ----------------
+  await win.click('[data-testid=detail-back]')
+  await win.click('[data-testid=add-game]')
+  await win.selectOption('[data-testid=copy-system]', { label: 'PlayStation 5' })
+  await win.click('[data-testid=format-physical]')
+  await win.fill('[data-testid=edit-title]', 'lookup quest')
+  await win.waitForSelector('[data-testid=lookup-hit]') // searched automatically after typing
+  assert.equal(await win.locator('[data-testid=lookup-hit]').count(), 2)
+  await shot(win, '06a-lookup-results')
+  await win.click('[data-testid=lookup-hit]:has-text("Lookup Quest") >> nth=0')
+  await win.waitForFunction(() => document.querySelector('[data-testid=edit-developer]')?.value === 'Quest Dev')
+  await win.fill('[data-testid=edit-description]', 'Found online. My copy came with a poster.')
+  await shot(win, '06b-lookup-filled')
+  await win.click('[data-testid=save-game]')
+  await win.waitForSelector('[data-testid=detail-title]:has-text("Lookup Quest")')
+  const lq = await byTitle(win, 'Lookup Quest')
+  assert.equal(lq.developer, 'Quest Dev')
+  assert.equal(lq.publisher, 'Quest Pub')
+  assert.equal(lq.releaseDate, '2018-06-05')
+  assert.ok(lq.coverFile && fs.existsSync(path.join(dataDir, 'images', lq.coverFile)), 'box art downloaded and stored locally')
+  assert.equal(lq.steamAppId, 40)
+  assert.equal(lq.source, 'manual')
+  assert.deepEqual(lq.copies.map((c) => [c.format, c.store, c.launchType]), [['physical', '', 'none']], 'ownership stays as entered; nothing marked as a Steam purchase')
+  assert.deepEqual(lq.lockedFields, ['description'], 'only the hand-edited field is protected')
+  const genres = new Map((await lib(win)).genres.map((g) => [g.id, g.name]))
+  assert.deepEqual(lq.genreIds.map((id) => genres.get(id)).sort(), ['Adventure', 'RPG'])
+  log('Add Game looked up details online for a PS5 disc game, without marking it as owned on Steam')
+
   // ---------------- Launching ----------------
   const marker = path.join(work, 'launched.txt')
   fs.mkdirSync(path.join(work, 'My Games'), { recursive: true }) // path with a space, like "Program Files"
@@ -392,7 +429,7 @@ async function openGame(win, title) {
   ;({ app, win } = await launch(port))
   await win.waitForSelector('[data-testid=gallery]')
   L = await lib(win)
-  assert.equal(L.games.length, 5)
+  assert.equal(L.games.length, 6)
   assert.equal(L.games.find((g) => g.title === 'Hades').rating, 4)
   await win.click('.nav-item:has-text("All Games")')
   await shot(win, '08-final')

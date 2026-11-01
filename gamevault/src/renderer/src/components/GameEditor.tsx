@@ -1,12 +1,12 @@
-import { useMemo, useRef, useState } from 'react'
-import type { CopyInput, Game, GameInput, MetadataField } from '@shared/types'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import type { CopyInput, Game, GameInput, LookupResult, MetadataField } from '@shared/types'
 import { PLAY_STATUSES, PLAY_STATUS_LABELS } from '@shared/types'
 import { parseLooseDate } from '@shared/filter'
 import { imgUrl, Modal, useApp } from '../state'
 import { Cover } from './Cover'
 import { Stars } from './Gallery'
 import { gameToInput, LaunchFields } from './LaunchFields'
-import { IconImage, IconLock, IconPlus, IconTrash, IconUpload, IconX } from './Icons'
+import { IconImage, IconLock, IconPlus, IconSearch, IconTrash, IconUpload, IconX } from './Icons'
 
 const STORES = [
   'Steam', 'Epic Games Store', 'GOG', 'Xbox app / Microsoft Store', 'EA app', 'Ubisoft Connect', 'Battle.net', 'itch.io',
@@ -55,7 +55,90 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
   const [showLaunch, setShowLaunch] = useState<Record<number, boolean>>({})
   const set = (p: Partial<GameInput>): void => setV((x) => ({ ...x, ...p }))
   const dirty = JSON.stringify(v) !== JSON.stringify(initial)
-  const isSteam = game?.source === 'steam'
+  const isSteam = game?.source === 'steam' || !!game?.steamAppId
+
+  // ---- online details lookup ----
+  type Hit = { appId: number; name: string; thumb: string }
+  const [hits, setHits] = useState<Hit[] | null>(null)
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [applying, setApplying] = useState<number | null>(null)
+  const [lookup, setLookup] = useState<LookupResult | null>(null)
+  const [lookupDismissed, setLookupDismissed] = useState(false)
+  const lastSearched = useRef('')
+
+  const runSearch = async (term: string): Promise<void> => {
+    const q = term.trim()
+    if (q.length < 2) return
+    lastSearched.current = q.toLowerCase()
+    setSearching(true)
+    setSearchError('')
+    try {
+      const r = await window.api.searchDetails(q)
+      if (lastSearched.current === q.toLowerCase()) setHits(r)
+    } catch (e) {
+      setSearchError((e as Error).message)
+      setHits(null)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  // When adding a new game, look the title up automatically after a short pause in typing.
+  useEffect(() => {
+    if (game || lookup || lookupDismissed) return
+    const q = v.title.trim()
+    if (q.length < 3 || q.toLowerCase() === lastSearched.current) return
+    const t = window.setTimeout(() => void runSearch(q), 700)
+    return () => window.clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [v.title, game, lookup, lookupDismissed])
+
+  const applyHit = async (hit: Hit): Promise<void> => {
+    setApplying(hit.appId)
+    try {
+      const d = await window.api.lookupDetails(hit.appId)
+      setLookup(d)
+      setHits(null)
+      setV((x) => {
+        const next: GameInput = {
+          ...x,
+          title: d.title || x.title,
+          description: d.description || x.description,
+          developer: d.developer || x.developer,
+          publisher: d.publisher || x.publisher,
+          releaseDate: d.releaseDate || x.releaseDate,
+          genreNames: d.genres.length ? d.genres : x.genreNames,
+          steamAppId: x.steamAppId ?? d.appId
+        }
+        if (d.coverFile) {
+          if (!x.coverFile) Object.assign(next, { coverFile: d.coverFile, coverFit: d.coverPortrait ? 'cover' : 'contain', coverPosX: 50, coverPosY: 50, coverZoom: 1 })
+          else next.imageFiles = [...x.imageFiles, d.coverFile] // keep the user's own cover; offer the found art as an extra image
+        }
+        return next
+      })
+      if (d.releaseDate) setDateDraft(d.releaseDate)
+      toast(`Filled in details for "${d.title}". Review them, then save.`, 'success')
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    } finally {
+      setApplying(null)
+    }
+  }
+
+  /** Fields still holding exactly what the lookup returned (not manual edits). */
+  const sourceFields = (final: GameInput): MetadataField[] => {
+    if (!lookup) return []
+    const out: MetadataField[] = []
+    if (final.title === lookup.title) out.push('title')
+    if (final.description === lookup.description) out.push('description')
+    if (final.developer === lookup.developer) out.push('developer')
+    if (final.publisher === lookup.publisher) out.push('publisher')
+    if (final.releaseDate === lookup.releaseDate) out.push('releaseDate')
+    if (final.genreNames.map((g) => g.toLowerCase()).sort().join('|') === lookup.genres.map((g) => g.toLowerCase()).sort().join('|')) out.push('genres')
+    if (lookup.coverFile && final.coverFile === lookup.coverFile) out.push('cover')
+    return out
+  }
 
   const tryClose = async (): Promise<void> => {
     if (dirty && !(await confirm({ title: 'Discard changes?', body: <p>You have unsaved changes to this game.</p>, confirmLabel: 'Discard', danger: true }))) return
@@ -98,7 +181,15 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
     }
     setSaving(true)
     try {
-      const g = await window.api.saveGame({ ...v, releaseDate: date, copies, genreNames: [...v.genreNames, ...(genreDraft.trim() ? [genreDraft.trim()] : [])] })
+      const final: GameInput = { ...v, releaseDate: date, copies, genreNames: [...v.genreNames, ...(genreDraft.trim() ? [genreDraft.trim()] : [])] }
+      const fromLookup = sourceFields(final)
+      if (!game && lookup) {
+        // New game: anything changed after the lookup counts as a manual edit and is kept on refresh.
+        const all: MetadataField[] = ['title', 'description', 'developer', 'publisher', 'releaseDate', 'genres', 'cover']
+        final.lockedFields = all.filter((f) => !fromLookup.includes(f) && (f !== 'cover' || !!final.coverFile))
+      }
+      final.sourceFields = fromLookup
+      const g = await window.api.saveGame(final)
       await reload()
       toast(game ? 'Changes saved.' : `Added "${g.title}".`, 'success')
       onSaved(g)
@@ -172,6 +263,33 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
               <input className="input" autoFocus value={v.title} onChange={(e) => { set({ title: e.target.value }); setTitleError('') }} placeholder="Game title" data-testid="edit-title" />
               {titleError && <span className="err-text small">{titleError}</span>}
             </label>
+
+            <div className="lookup" data-testid="lookup">
+              <div className="row" style={{ justifyContent: 'space-between' }}>
+                <span className="small muted">
+                  {lookup
+                    ? <>Details filled in from the Steam Store catalogue (App ID {lookup.appId}). Edit anything you like before saving.</>
+                    : <>Find the description, genres, dates and box art online — works for games you own anywhere.</>}
+                </span>
+                <button type="button" className="btn sm" disabled={v.title.trim().length < 2 || searching} onClick={() => { setLookupDismissed(false); runSearch(v.title) }} data-testid="lookup-search">
+                  {searching ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <IconSearch size={14} />} {lookup ? 'Look up again' : 'Find details online'}
+                </button>
+              </div>
+              {searchError && <div className="err-text small" style={{ marginTop: 6 }}>Couldn't search online: {searchError} You can still fill everything in by hand.</div>}
+              {hits && hits.length === 0 && <div className="small muted" style={{ marginTop: 6 }}>No matches on the Steam Store for "{lastSearched.current}". Console-only games often aren't listed — fill the details in by hand.</div>}
+              {hits && hits.length > 0 && (
+                <div className="lookup-hits">
+                  {hits.map((h) => (
+                    <button type="button" key={h.appId} className="lookup-hit" onClick={() => applyHit(h)} disabled={applying != null} data-testid="lookup-hit">
+                      <img src={h.thumb} alt="" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
+                      <span className="name">{h.name}</span>
+                      {applying === h.appId ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <span className="use">Use</span>}
+                    </button>
+                  ))}
+                  <button type="button" className="btn sm ghost" onClick={() => { setHits(null); setLookupDismissed(true) }}>None of these</button>
+                </div>
+              )}
+            </div>
 
             <div>
               <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>

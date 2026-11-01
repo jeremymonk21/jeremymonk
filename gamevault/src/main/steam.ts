@@ -161,6 +161,28 @@ export async function getStoreDetails(appId: number): Promise<StoreDetails | nul
   }
 }
 
+export interface StoreSearchResult {
+  appId: number
+  name: string
+  thumb: string
+}
+
+/**
+ * Searches the public Steam Store catalogue by name (no API key, no ownership needed).
+ * Used to fill in details for games you own anywhere — disc, other stores, downloads.
+ */
+export async function searchStore(term: string): Promise<StoreSearchResult[]> {
+  const q = term.trim()
+  if (q.length < 2) return []
+  const data = (await getJson(`${STORE_BASE}/api/storesearch/?term=${encodeURIComponent(q)}&l=english&cc=US`)) as {
+    items?: Array<{ id: number; name: string; type?: string; tiny_image?: string }>
+  }
+  return (data.items ?? [])
+    .filter((i) => Number.isInteger(i.id) && (!i.type || i.type === 'app'))
+    .slice(0, 8)
+    .map((i) => ({ appId: i.id, name: i.name, thumb: i.tiny_image || `${CDN_BASES[0]}/${i.id}/capsule_231x87.jpg` }))
+}
+
 /** Candidate artwork URLs, best (portrait box art) first. */
 export function artworkUrls(appId: number, headerImage?: string): string[] {
   const urls: string[] = []
