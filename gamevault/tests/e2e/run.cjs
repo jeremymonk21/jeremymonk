@@ -108,6 +108,14 @@ async function waitLib(win, pred, timeout = 15000) {
     await new Promise((r) => setTimeout(r, 150))
   }
 }
+/** Polls a Node-side check (avoids Playwright string evaluation, which the app's CSP blocks). */
+async function until(check, what, timeout = 10000) {
+  const end = Date.now() + timeout
+  while (!(await check().catch(() => false))) {
+    if (Date.now() > end) throw new Error('Timed out waiting for ' + what)
+    await new Promise((r) => setTimeout(r, 100))
+  }
+}
 const shot = async (win, name) => SHOTS && win.screenshot({ path: path.join(SHOTS, `${name}.png`) })
 async function confirmOk(win) {
   await win.click('[data-testid=confirm-ok]')
@@ -242,7 +250,7 @@ async function openGame(win, title) {
   await win.click('.nav-item:has-text("All Games")')
   await win.hover('[data-testid=game-card]:has-text("Mario Kart")')
   await win.click('[data-testid=game-card]:has-text("Mario Kart") [data-testid=fav-toggle]')
-  await win.waitForFunction(() => document.querySelector('[data-testid=nav-favorites] .count')?.textContent === '2')
+  await until(async () => (await win.textContent('[data-testid=nav-favorites] .count')) === '2', 'favorites count to update')
   log('System → genre → status/format/favorites filters combine; search; favorites toggled from a card')
 
   // ---------------- Steam import (mock) ----------------
@@ -333,7 +341,7 @@ async function openGame(win, title) {
   assert.equal(await win.locator('[data-testid=lookup-hit]').count(), 2)
   await shot(win, '06a-lookup-results')
   await win.click('[data-testid=lookup-hit]:has-text("Lookup Quest") >> nth=0')
-  await win.waitForFunction(() => document.querySelector('[data-testid=edit-developer]')?.value === 'Quest Dev')
+  await until(async () => (await win.inputValue('[data-testid=edit-developer]')) === 'Quest Dev', 'looked-up details to fill in')
   await win.fill('[data-testid=edit-description]', 'Found online. My copy came with a poster.')
   await shot(win, '06b-lookup-filled')
   await win.click('[data-testid=save-game]')
