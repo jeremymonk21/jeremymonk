@@ -85,38 +85,56 @@ export function stageRestore(zipPath: string, stagingDir: string): BackupInfo {
  * Swaps the staged backup into the live data folder. The caller must have closed the
  * database. On failure the previous data is put back.
  */
-export function swapInStaged(dataDir: string, stagingDir: string): void {
-  const stamp = Date.now()
-  const old = join(dataDir, `previous-${stamp}`)
-  mkdirSync(old, { recursive: true })
-  const moved: Array<[string, string]> = []
-  const move = (from: string, to: string): void => {
-    if (existsSync(from)) {
+/** Windows can briefly lock files (antivirus, indexer, image cache); retry renames for a short while. */
+function renameRetry(from: string, to: string): void {
+  for (let attempt = 0; ; attempt++) {
+    try {
       renameSync(from, to)
-      moved.push([from, to])
+      return
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (attempt >= 20 || !['EPERM', 'EBUSY', 'EACCES'].includes(code ?? '')) throw e
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 150)
     }
   }
+}
+
+/**
+ * Swaps the staged backup into the live data folder. The caller must have closed the
+ * database. On failure everything that was moved is put back exactly as it was.
+ */
+export function swapInStaged(dataDir: string, stagingDir: string): void {
+  const old = join(dataDir, `previous-${Date.now()}`)
+  mkdirSync(old, { recursive: true })
+  // Every completed move, so a failure can be undone in reverse order.
+  const done: Array<[string, string]> = []
+  const move = (from: string, to: string): void => {
+    renameRetry(from, to)
+    done.push([from, to])
+  }
   try {
-    for (const f of ['gamevault.db', 'gamevault.db-wal', 'gamevault.db-shm']) move(join(dataDir, f), join(old, f))
-    move(join(dataDir, 'images'), join(old, 'images'))
-    renameSync(join(stagingDir, 'gamevault.db'), join(dataDir, 'gamevault.db'))
-    renameSync(join(stagingDir, 'images'), join(dataDir, 'images'))
+    for (const f of ['gamevault.db', 'gamevault.db-wal', 'gamevault.db-shm']) {
+      if (existsSync(join(dataDir, f))) move(join(dataDir, f), join(old, f))
+    }
+    if (existsSync(join(dataDir, 'images'))) move(join(dataDir, 'images'), join(old, 'images'))
+    move(join(stagingDir, 'gamevault.db'), join(dataDir, 'gamevault.db'))
+    move(join(stagingDir, 'images'), join(dataDir, 'images'))
   } catch (e) {
-    // Roll back.
-    rmSync(join(dataDir, 'gamevault.db'), { force: true })
-    if (!existsSync(join(old, 'images'))) rmSync(join(dataDir, 'images'), { recursive: true, force: true })
-    for (const [from, to] of moved.reverse()) {
+    for (const [from, to] of done.reverse()) {
       try {
-        rmSync(from, { recursive: true, force: true })
-        renameSync(to, from)
+        renameRetry(to, from)
       } catch {
-        /* best effort */
+        /* best effort; the previous data is still in the previous-* folder */
       }
     }
     throw e
   }
-  rmSync(old, { recursive: true, force: true })
-  rmSync(stagingDir, { recursive: true, force: true })
+  try {
+    rmSync(old, { recursive: true, force: true })
+    rmSync(stagingDir, { recursive: true, force: true })
+  } catch {
+    /* leftovers are harmless */
+  }
 }
 
 function csvCell(v: unknown): string {

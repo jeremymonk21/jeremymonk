@@ -89,6 +89,16 @@ async function launch(port) {
 }
 const lib = (win) => win.evaluate(() => window.api.getLibrary())
 const byTitle = async (win, t) => (await lib(win)).games.find((g) => g.title === t)
+/** Polls the library in Node until `pred(library)` is true (Playwright's waitForFunction does not await async predicates). */
+async function waitLib(win, pred, timeout = 15000) {
+  const end = Date.now() + timeout
+  for (;;) {
+    const l = await lib(win).catch(() => null)
+    if (l && pred(l)) return l
+    if (Date.now() > end) throw new Error('Timed out waiting for library condition: ' + pred.toString())
+    await new Promise((r) => setTimeout(r, 150))
+  }
+}
 const shot = async (win, name) => SHOTS && win.screenshot({ path: path.join(SHOTS, `${name}.png`) })
 async function confirmOk(win) {
   await win.click('[data-testid=confirm-ok]')
@@ -298,7 +308,7 @@ async function openGame(win, title) {
   mock.developer = 'Alpha Studio v3'
   await openGame(win, 'Mock Game Alpha')
   await win.click('button:has-text("Refresh from Steam")')
-  await win.waitForFunction(async () => (await window.api.getLibrary()).games.find((g) => g.steamAppId === 10).developer === 'Alpha Studio v3', null, { timeout: 15000 })
+  await waitLib(win, (l) => l.games.find((g) => g.steamAppId === 10).developer === 'Alpha Studio v3')
   alpha = await byTitle(win, 'Mock Game Alpha')
   assert.equal(alpha.notes, 'My Alpha notes')
   assert.equal(alpha.description, 'My own description.')
@@ -336,7 +346,7 @@ async function openGame(win, title) {
   await shot(win, '07-missing-path')
   await win.click('[data-testid=remove-launch]')
   await confirmOk(win)
-  await win.waitForFunction(async () => (await window.api.getLibrary()).games.find((g) => g.title === 'Hades').copies[0].launchType === 'none')
+  await waitLib(win, (l) => l.games.find((g) => g.title === 'Hades').copies[0].launchType === 'none')
   log('Missing launch file detected and explained; Play hidden; launch path removed')
 
   // ---------------- Backup / restore / CSV ----------------
@@ -360,11 +370,16 @@ async function openGame(win, title) {
   await openGame(win, 'Hades')
   await win.click('[data-testid=detail-delete]')
   await confirmOk(win)
-  await win.waitForFunction(async () => !(await window.api.getLibrary()).games.some((g) => g.title === 'Hades'))
+  await waitLib(win, (l) => !l.games.some((g) => g.title === 'Hades'))
   await win.click('[data-testid=nav-settings]')
   await win.click('[data-testid=restore]')
   await confirmOk(win)
-  await win.waitForFunction(async () => (await window.api.getLibrary()).games.some((g) => g.title === 'Hades'), null, { timeout: 15000 })
+  try {
+    await waitLib(win, (l) => l.games.some((g) => g.title === 'Hades'))
+  } catch (e) {
+    const toasts = await win.locator('.toast').allTextContents()
+    throw new Error(`Restore did not bring Hades back. Toasts: ${JSON.stringify(toasts)}`)
+  }
   hades = await byTitle(win, 'Hades')
   assert.equal(hades.notes, 'Beat the first boss with the spear. Next: try the bow.')
   alpha = await byTitle(win, 'Mock Game Alpha')
