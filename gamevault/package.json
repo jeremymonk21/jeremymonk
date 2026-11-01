@@ -1,0 +1,43 @@
+{
+  "name": "gamevault",
+  "productName": "GameVault",
+  "version": "1.0.0",
+  "description": "A personal video game collection manager with a box-art gallery.",
+  "author": "GameVault",
+  "license": "MIT",
+  "private": true,
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "postinstall": "electron-builder install-app-deps",
+    "dist": "electron-vite build && electron-builder --win --x64",
+    "dist:dir": "electron-vite build && electron-builder --win --x64 --dir",
+    "test:e2e": "node tests/e2e/run.cjs",
+    "rebuild:native": "electron-builder install-app-deps"
+  },
+  "dependencies": {
+    "adm-zip": "0.5.16",
+    "better-sqlite3": "11.7.0"
+  },
+  "devDependencies": {
+    "@types/adm-zip": "0.5.7",
+    "@types/better-sqlite3": "7.6.12",
+    "@types/node": "20.17.9",
+    "@types/react": "18.3.12",
+    "@types/react-dom": "18.3.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "electron": "33.2.1",
+    "electron-builder": "25.1.8",
+    "electron-vite": "2.3.0",
+    "playwright-core": "1.49.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "typescript": "5.6.3",
+    "vite": "5.4.11",
+    "vitest": "2.1.8"
+  }
+}

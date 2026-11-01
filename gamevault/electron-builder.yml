@@ -1,0 +1,28 @@
+appId: com.gamevault.desktop
+productName: GameVault
+copyright: Copyright © 2026
+directories:
+  buildResources: resources
+  output: release/${version}
+files:
+  - out/**/*
+  - package.json
+  - resources/icon.png
+  - "!**/*.map"
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: resources/icon.png
+  artifactName: GameVault-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: GameVault
+  deleteAppDataOnUninstall: false
+npmRebuild: true

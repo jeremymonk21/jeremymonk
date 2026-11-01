@@ -1,0 +1,51 @@
+name: GameVault – Windows build
+
+on:
+  push:
+    paths:
+      - 'gamevault/**'
+      - '.github/workflows/gamevault-windows.yml'
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: gamevault
+    env:
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gamevault/package-lock.json
+
+      - name: Install dependencies (rebuilds SQLite for Electron on Windows)
+        run: npm ci
+
+      - name: Type-check
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Build app
+        run: npm run build
+
+      - name: End-to-end tests (real Electron app on Windows)
+        run: npm run test:e2e
+
+      - name: Build installer
+        run: npx electron-builder --win --x64 --publish never
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameVault-Windows-Installer
+          path: gamevault/release/*/GameVault-Setup-*.exe
+          if-no-files-found: error

@@ -1,5 +1,7 @@
 # monkleads: lead finder for The Monk Press
 
+> **Also in this repo:** [`gamevault/`](gamevault/README.md) — GameVault, a Windows desktop app for managing a personal video game collection (box-art gallery, filters, Steam import, launching, backup/restore).
+
 A command-line tool for **The Monk Press** (themonkpress.com), Jeremy Monk's one-person web design
 studio in Rensselaer County, NY. It does four things:
 
