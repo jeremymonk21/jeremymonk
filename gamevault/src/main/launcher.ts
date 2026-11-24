@@ -122,11 +122,10 @@ export async function launchCopy(copy: GameCopy, ctx: LaunchContext): Promise<La
         /* fall through */
       }
     }
+    // Batch files run directly (through cmd.exe) so their process can be timed.
+    if (ext === '.bat' || ext === '.cmd') return spawnDetached(target, splitArgs(copy.launchArgs), copy.launchWorkDir || dirname(target), ctx.onExit)
     if (copy.launchType === 'shortcut' || SHORTCUT_EXTS.includes(ext)) {
-      // Windows shortcuts (.lnk/.url) are opened by the shell, exactly like double-clicking them.
-      if (copy.launchArgs.trim() && ext !== '.lnk' && ext !== '.url') {
-        return spawnDetached(target, splitArgs(copy.launchArgs), copy.launchWorkDir || dirname(target), ctx.onExit)
-      }
+      // Other shortcuts (.lnk/.url) are opened by the shell, exactly like double-clicking them.
       const err = await shell.openPath(target)
       if (err) return { ok: false, state: 'error', message: `Windows could not open the shortcut: ${err}` }
       return { ok: true, state: 'ready', message: 'Launching…' }
