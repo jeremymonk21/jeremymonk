@@ -6,6 +6,8 @@ import * as db from './db'
 import { cleanupImages, downloadImage, importImageFile, initImages, resolveImage, IMAGE_EXTENSIONS } from './images'
 import { artworkUrls, detectSteamPath, getOwnedGames, getStoreDetails, installedSteamApps, resolveSteamId, searchStore, SteamError } from './steam'
 import { igdbConfigured, igdbDetails, igdbSearch, sgdbArt, sgdbConfigured, testIgdb, testSgdb } from './sources'
+import { emulatorStatus, scanEmulatorFolder } from './emulators'
+import { matchSystem } from '@shared/platforms'
 import { checkCopy, launchCopy, openSteamInstall, type LaunchContext } from './launcher'
 import { buildCsv, createBackup, stageRestore, swapInStaged } from './backup'
 import { removeSampleTags, seedSamplesIfFirstRun } from './samples'
@@ -13,6 +15,8 @@ import { getSecret, initSecrets, setSecret } from './secrets'
 import { DEFAULT_PREFS } from '@shared/types'
 import type {
   AppPrefs,
+  Emulator,
+  GameFormat,
   GameCopy,
   GameInput,
   GamePatch,
@@ -336,6 +340,19 @@ function registerIpc(): void {
     return db.getGame(database, gameId)
   })
 
+  // ---- emulators ----
+  handle('emulator:save', (e: Omit<Emulator, 'id'> & { id?: number }) => db.saveEmulator(database, e))
+  handle('emulator:delete', (id: number) => db.deleteEmulator(database, id))
+  handle('emulator:status', () => db.listEmulators(database).map((e) => ({ ...emulatorStatus(e), games: (database.prepare('SELECT COUNT(DISTINCT game_id) AS n FROM copies WHERE emulator_id = ?').get(e.id) as { n: number }).n })))
+  handle('emulator:scan', (id: number) => {
+    const e = db.getEmulator(database, id)
+    if (!e) throw new Error('This emulator setup no longer exists.')
+    return scanEmulatorFolder(e, db.knownLaunchTargets(database))
+  })
+  handle('emulator:import', (items: Array<{ file: string; title: string; emulatorId: number; systemId: number; format: GameFormat }>, opts: { lookup: boolean }) =>
+    importScanned(items, opts)
+  )
+
   handle('steam:cancel', () => {
     importCancelled = true
   })
@@ -445,6 +462,66 @@ async function restoreFrom(zipPath: string): Promise<{ ok: boolean; message: str
     openDb()
   }
   return { ok: true, message: 'Backup restored.', safetyBackup: safety }
+}
+
+// ---------------- emulator folder import ----------------
+
+async function importScanned(items: Array<{ file: string; title: string; emulatorId: number; systemId: number; format: GameFormat }>, opts: { lookup: boolean }): Promise<ImportProgress> {
+  const p: ImportProgress = { done: 0, total: items.length, current: '', phase: 'importing', added: 0, updated: 0, errors: [] }
+  const send = (): void => win?.webContents.send('scan:progress', p)
+  const systems = db.listSystems(database)
+  const useIgdb = opts.lookup && igdbConfigured()
+  const useSgdb = opts.lookup && sgdbConfigured()
+  send()
+  for (const it of items) {
+    p.current = it.title
+    send()
+    try {
+      const game = db.saveGame(database, {
+        title: it.title, description: '', developer: '', publisher: '', releaseDate: '', coverFile: null, coverFit: 'cover', coverPosX: 50, coverPosY: 50, coverZoom: 1,
+        rating: null, notes: '', playStatus: 'not_started', favorite: false, steamAppId: null, genreNames: [], categoryIds: [], imageFiles: [],
+        copies: [{ systemId: it.systemId, format: it.format, store: '', steamAppId: null, launchType: 'emulator', emulatorId: it.emulatorId, launchTarget: it.file, launchArgs: '', launchWorkDir: '' }]
+      })
+      p.added++
+      if (useIgdb) {
+        try {
+          const hits = await igdbSearch(it.title)
+          const sys = systems.filter((s) => s.id === it.systemId)
+          const hit = hits.find((h) => matchSystem(h.platforms, sys) === it.systemId)
+          if (hit) {
+            const d = await igdbDetails(hit.id)
+            if (d) {
+              const cover = d.coverUrl ? await downloadImage(d.coverUrl) : null
+              db.applyExternalMetadata(database, game.id, { title: d.title, description: d.description, developer: d.developer, publisher: d.publisher, releaseDate: d.releaseDate, genres: d.genres, coverFile: cover })
+              database.prepare('UPDATE games SET igdb_id = ?, video_ids = ? WHERE id = ?').run(d.id, JSON.stringify(d.videoIds), game.id)
+            }
+          } else p.errors.push(`${it.title}: no IGDB match for this system — you can look it up from the game's Edit page.`)
+        } catch (e) {
+          p.errors.push(`${it.title}: ${(e as Error).message}`)
+        }
+      }
+      if (useSgdb) {
+        try {
+          const g = db.getGame(database, game.id)
+          const art = await sgdbArt(g?.title ?? it.title, null)
+          const hero = art.heroes[0] ? await downloadImage(art.heroes[0].url, 30000) : null
+          const logo = art.logos[0] ? await downloadImage(art.logos[0].url, 30000) : null
+          const grid = !g?.coverFile && art.grids[0] ? await downloadImage(art.grids[0].url, 30000) : null
+          database.prepare('UPDATE games SET hero_file = COALESCE(?, hero_file), logo_file = COALESCE(?, logo_file), cover_file = COALESCE(cover_file, ?) WHERE id = ?').run(hero, logo, grid, game.id)
+        } catch (e) {
+          p.errors.push(`${it.title}: artwork — ${(e as Error).message}`)
+        }
+      }
+    } catch (e) {
+      p.errors.push(`${it.title}: ${(e as Error).message}`)
+    }
+    p.done++
+    send()
+  }
+  p.phase = 'finished'
+  p.current = ''
+  send()
+  return p
 }
 
 // ---------------- Steam import job ----------------

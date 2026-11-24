@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import type { SteamConfig, SystemKind, Tag } from '@shared/types'
+import type { AppPrefs, SteamConfig, SystemKind, Tag } from '@shared/types'
+import { EmulatorSettings } from './EmulatorSettings'
 import { useApp } from '../state'
 import { IconDownload, IconEdit, IconFolder, IconPlus, IconRefresh, IconSteam, IconTrash, IconUpload } from './Icons'
 
@@ -229,6 +230,43 @@ function SteamSettings({ onImport }: { onImport: (mode: 'library' | 'installed')
   )
 }
 
+function BigPictureSettings(): JSX.Element {
+  const { toast } = useApp()
+  const [p, setP] = useState<AppPrefs | null>(null)
+  useEffect(() => {
+    window.api.getPrefs().then(setP).catch(() => undefined)
+  }, [])
+  const update = async (u: Partial<AppPrefs>): Promise<void> => {
+    try {
+      setP(await window.api.setPrefs(u))
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
+  if (!p) return <div className="section" id="settings-bigpicture" />
+  return (
+    <div className="section" id="settings-bigpicture">
+      <h3>Big Picture</h3>
+      <p className="muted small" style={{ marginTop: -4 }}>Full-screen mode for the couch or a big monitor, driven by an Xbox controller. Open it with the Big Picture button or F11.</p>
+      <div style={{ display: 'grid', gap: 12 }}>
+        <label className="field">
+          Music folder <span className="hint">Your own music (MP3, OGG, FLAC, WAV, M4A) plays shuffled in the background. Leave empty for no music.</span>
+          <div className="row">
+            <input className="input" style={{ flex: 1 }} value={p.musicFolder} onChange={(e) => setP({ ...p, musicFolder: e.target.value })} onBlur={() => update({ musicFolder: p.musicFolder })} data-testid="bp-music" />
+            <button className="btn" onClick={async () => { const d = await window.api.pickFolder('Choose your music folder'); if (d) update({ musicFolder: d }) }}><IconFolder size={16} /> Browse…</button>
+          </div>
+        </label>
+        <label className="field">
+          Music volume
+          <input className="range" type="range" min={0} max={1} step={0.05} value={p.musicVolume} onChange={(e) => setP({ ...p, musicVolume: Number(e.target.value) })} onMouseUp={() => update({ musicVolume: p.musicVolume })} onKeyUp={() => update({ musicVolume: p.musicVolume })} style={{ maxWidth: 300 }} />
+        </label>
+        <label className="check"><input type="checkbox" checked={p.playTrailers} onChange={(e) => update({ playTrailers: e.target.checked })} /> Play trailers from IGDB (needs internet). Your own clips always play.</label>
+        <label className="check"><input type="checkbox" checked={p.startInBigPicture} onChange={(e) => update({ startInBigPicture: e.target.checked })} data-testid="bp-start" /> Start GameVault in Big Picture</label>
+      </div>
+    </div>
+  )
+}
+
 function SourcesSettings(): JSX.Element {
   const { toast } = useApp()
   const [cfg, setCfg] = useState<{ igdb: boolean; igdbClientId: string; sgdb: boolean } | null>(null)
@@ -383,9 +421,24 @@ export function SettingsView({ onImport }: { onImport: (mode: 'library' | 'insta
     toast(`Removed ${n} sample game${n === 1 ? '' : 's'}.`, 'success')
   }
 
+  const jump = (id: string): void => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   return (
     <div className="settings">
-      <div className="section">
+      <nav className="settings-nav" aria-label="Settings sections">
+        {[
+          ['settings-backup', 'Backup'],
+          ['settings-categories', 'Categories'],
+          ['settings-systems', 'Systems'],
+          ['settings-emulators', 'Emulators'],
+          ['settings-sources', 'Online sources'],
+          ['settings-steam', 'Steam'],
+          ['settings-bigpicture', 'Big Picture'],
+          ['settings-genres', 'Genres']
+        ].map(([id, label]) => (
+          <button key={id} className="chip" onClick={() => jump(id)}>{label}</button>
+        ))}
+      </nav>
+      <div className="section" id="settings-backup">
         <h3>Backup, restore & export</h3>
         <p className="muted small" style={{ marginTop: -4 }}>A backup is a single .zip with your whole collection: games, copies, artwork and images, ratings, notes, favorites, play status, systems, genres and categories.</p>
         <div className="row wrap">
@@ -408,8 +461,10 @@ export function SettingsView({ onImport }: { onImport: (mode: 'library' | 'insta
       )}
       <TagManager table="categories" tags={lib?.categories ?? []} title="Custom categories" help='Your own groupings, such as "Backlog", "Couch co-op" or "Comfort games". Separate from genres.' />
       <Systems />
+      <EmulatorSettings />
       <SourcesSettings />
       <SteamSettings onImport={onImport} />
+      <BigPictureSettings />
       <TagManager table="genres" tags={lib?.genres ?? []} title="Genres" help="Genres come from game metadata or what you type in the editor. Rename or tidy them here." />
       <p className="muted small">GameVault {version}</p>
     </div>

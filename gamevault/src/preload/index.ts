@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
   AppPrefs,
+  Emulator,
+  GameFormat,
+  ScanCandidate,
   BackupResult,
   Collection,
   Stats,
@@ -103,6 +106,19 @@ const api = {
   showInFolder: (path: string) => call<void>('app:showInFolder', path),
   version: () => call<string>('app:version'),
 
+  saveEmulator: (e: Omit<Emulator, 'id'> & { id?: number }) => call<Emulator>('emulator:save', e),
+  deleteEmulator: (id: number) => call<void>('emulator:delete', id),
+  emulatorStatus: () => call<Array<{ id: number; exeFound: boolean; folderFound: boolean; biosOk: boolean | null; games: number }>>('emulator:status'),
+  scanEmulator: (id: number) => call<ScanCandidate[]>('emulator:scan', id),
+  importScanned: (items: Array<{ file: string; title: string; emulatorId: number; systemId: number; format: GameFormat }>, opts: { lookup: boolean }) =>
+    call<ImportProgress>('emulator:import', items, opts),
+  onScanProgress: (fn: (p: ImportProgress) => void) => {
+    const listener = (_e: unknown, p: ImportProgress): void => fn(p)
+    ipcRenderer.on('scan:progress', listener)
+    return (): void => {
+      ipcRenderer.removeListener('scan:progress', listener)
+    }
+  },
   getPrefs: () => call<AppPrefs>('prefs:get'),
   setPrefs: (p: Partial<AppPrefs>) => call<AppPrefs>('prefs:set', p),
   onPlaySession: (fn: (s: { gameId: number; seconds: number }) => void) => {
