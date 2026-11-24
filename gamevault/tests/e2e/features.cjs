@@ -48,7 +48,7 @@ const server = http.createServer((req, res) => {
           id: 1001, name: 'Okami', summary: 'A wolf goddess restores colour to the world.',
           first_release_date: 1158624000, genres: [{ name: 'Adventure' }, { name: 'Action' }],
           involved_companies: [{ developer: true, publisher: false, company: { name: 'Clover Studio' } }, { developer: false, publisher: true, company: { name: 'Capcom' } }],
-          platforms: [{ name: 'PlayStation 2' }], cover: { image_id: 'co1abc' }, videos: [{ video_id: 'yt123' }], screenshots: [{ image_id: 'sc1' }]
+          platforms: [{ name: 'PlayStation 2' }], cover: { image_id: 'co1abc' }, videos: [{ video_id: 'dQw4w9WgXcQ' }], screenshots: [{ image_id: 'sc1' }]
         }])
       if (/search "okami"/i.test(body))
         return json([

@@ -1,0 +1,65 @@
+/** Stage 3: IGDB details + SteamGridDB artwork in Add Game, with a mock IGDB/Twitch/SteamGridDB server. */
+const assert = require('assert')
+const fs = require('fs')
+const path = require('path')
+
+module.exports = async function stage3(t) {
+  const { win, dataDir, calls, byTitle, until, nav, shot, log } = t
+  // Keys entered in Settings → Online sources
+  await win.click('[data-testid=nav-settings]')
+  await win.fill('[data-testid=igdb-client-id]', 'CID')
+  await win.fill('[data-testid=igdb-secret]', 'SECRET')
+  await win.click('[data-testid=igdb-save]')
+  await win.waitForSelector('.toast:has-text("IGDB connected")')
+  await win.fill('[data-testid=sgdb-key]', 'SGDBKEY')
+  await win.click('[data-testid=sgdb-save]')
+  await win.waitForSelector('.toast:has-text("SteamGridDB connected")')
+  const secrets = fs.readFileSync(path.join(dataDir, 'secrets.json'), 'utf8')
+  assert.ok(!secrets.includes('SECRET') && !secrets.includes('SGDBKEY') || !require('os').platform().startsWith('win'), 'keys stored encrypted on Windows')
+  log('Online sources: IGDB (Twitch) and SteamGridDB keys saved and tested from Settings')
+
+  // Add a PS2 disc game using the IGDB lookup
+  await win.click('[data-testid=add-game]')
+  await win.fill('[data-testid=edit-title]', 'okami')
+  await win.waitForSelector('[data-testid=lookup-hit]:has-text("IGDB")')
+  await shot(win, 'f05-lookup-igdb')
+  await win.click('[data-testid=lookup-hit]:has-text("Okami") >> nth=0')
+  await until(async () => (await win.inputValue('[data-testid=edit-developer]')) === 'Clover Studio', 'IGDB details filled')
+  await win.waitForSelector('[data-testid=art-grid]')
+  const ps2 = (await win.evaluate(() => window.api.getLibrary())).systems.find((s) => s.name === 'PlayStation 2').id
+  assert.equal(Number(await win.inputValue('[data-testid=copy-system]')), ps2, 'system set to the platform from IGDB')
+  await win.click('[data-testid=art-grid] >> nth=1')
+  await shot(win, 'f06-lookup-art')
+  await win.click('[data-testid=format-physical]')
+  await win.click('[data-testid=save-game]')
+  await win.waitForSelector('[data-testid=detail-title]:has-text("Okami")')
+  let g = await byTitle(win, 'Okami')
+  assert.equal(g.igdbId, 1001)
+  assert.equal(g.developer, 'Clover Studio')
+  assert.equal(g.publisher, 'Capcom')
+  assert.equal(g.releaseDate, '2006-09-19')
+  assert.deepEqual(g.videoIds, ['dQw4w9WgXcQ'])
+  assert.ok(g.coverFile && g.heroFile && g.logoFile, 'box art, background and logo stored')
+  for (const f of [g.coverFile, g.heroFile, g.logoFile]) assert.ok(fs.existsSync(path.join(dataDir, 'images', f)))
+  assert.ok(g.images.length >= 1, 'IGDB screenshots added as images')
+  assert.equal(g.copies[0].systemId, ps2)
+  assert.deepEqual(g.lockedFields, ['cover'], 'only the hand-picked cover is protected: ' + JSON.stringify(g.lockedFields))
+  const tokenCalls = calls.filter((c) => c.path === '/oauth2/token').length
+  assert.ok(tokenCalls >= 1 && calls.some((c) => c.path === '/v4/games' && c.clientId === 'CID'), 'IGDB called with Client-ID and token')
+  log('Add Game: IGDB details for a PS2 game, system picked from the platform, SteamGridDB box art, background and logo')
+
+  // Personal edits survive an IGDB refresh
+  await win.click('[data-testid=status-completed]')
+  await win.click('[data-testid=detail-edit]')
+  await win.fill('[data-testid=edit-description]', 'My favourite PS2 game.')
+  await win.click('[data-testid=save-game]')
+  await win.waitForSelector('[data-testid=detail-title]:has-text("Okami")')
+  await win.click('[data-testid=refresh-igdb]')
+  await win.waitForSelector('.toast:has-text("refreshed from IGDB")')
+  g = await byTitle(win, 'Okami')
+  assert.equal(g.description, 'My favourite PS2 game.')
+  assert.equal(g.playStatus, 'completed')
+  assert.deepEqual(g.lockedFields.sort(), ['cover', 'description'])
+  await win.click('[data-testid=detail-back]')
+  log('Refresh details from IGDB keeps the edited description and play status')
+}

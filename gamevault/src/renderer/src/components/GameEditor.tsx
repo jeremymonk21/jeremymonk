@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { CopyInput, Game, GameInput, LookupResult, MetadataField } from '@shared/types'
+import type { ArtOption, ArtSet, CopyInput, Game, GameInput, LookupHit, LookupResult, MetadataField } from '@shared/types'
+import { matchSystem } from '@shared/platforms'
 import { PLAY_STATUSES, PLAY_STATUS_LABELS } from '@shared/types'
 import { parseLooseDate } from '@shared/filter'
 import { imgUrl, Modal, useApp } from '../state'
@@ -83,14 +84,17 @@ export function GameEditor({
   const dirty = JSON.stringify(v) !== JSON.stringify(initial)
   const isSteam = game?.source === 'steam' || !!game?.steamAppId
 
-  // ---- online details lookup ----
-  type Hit = { appId: number; name: string; thumb: string }
-  const [hits, setHits] = useState<Hit[] | null>(null)
+  // ---- online details lookup (IGDB + Steam Store) and artwork (SteamGridDB) ----
+  const [hits, setHits] = useState<LookupHit[] | null>(null)
   const [searching, setSearching] = useState(false)
-  const [searchError, setSearchError] = useState('')
-  const [applying, setApplying] = useState<number | null>(null)
+  const [searchErrors, setSearchErrors] = useState<string[]>([])
+  const [applying, setApplying] = useState<string | null>(null)
   const [lookup, setLookup] = useState<LookupResult | null>(null)
   const [lookupDismissed, setLookupDismissed] = useState(false)
+  const [art, setArt] = useState<ArtSet | null>(null)
+  const [artLoading, setArtLoading] = useState(false)
+  const [artPicker, setArtPicker] = useState(false)
+  const [usingArt, setUsingArt] = useState<number | null>(null)
   const lastSearched = useRef('')
 
   const runSearch = async (term: string): Promise<void> => {
@@ -98,12 +102,15 @@ export function GameEditor({
     if (q.length < 2) return
     lastSearched.current = q.toLowerCase()
     setSearching(true)
-    setSearchError('')
+    setSearchErrors([])
     try {
       const r = await window.api.searchDetails(q)
-      if (lastSearched.current === q.toLowerCase()) setHits(r)
+      if (lastSearched.current === q.toLowerCase()) {
+        setHits(r.hits)
+        setSearchErrors(r.errors)
+      }
     } catch (e) {
-      setSearchError((e as Error).message)
+      setSearchErrors([(e as Error).message])
       setHits(null)
     } finally {
       setSearching(false)
@@ -120,12 +127,29 @@ export function GameEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [v.title, game, lookup, lookupDismissed])
 
-  const applyHit = async (hit: Hit): Promise<void> => {
-    setApplying(hit.appId)
+  const loadArt = async (title: string, steamAppId: number | null): Promise<void> => {
+    setArtLoading(true)
     try {
-      const d = await window.api.lookupDetails(hit.appId)
+      const cfg = await window.api.sourcesGetConfig()
+      if (!cfg.sgdb) {
+        setArt(null)
+        return
+      }
+      setArt(await window.api.listArt(title, steamAppId))
+    } catch (e) {
+      toast(`SteamGridDB: ${(e as Error).message}`, 'error')
+    } finally {
+      setArtLoading(false)
+    }
+  }
+
+  const applyHit = async (hit: LookupHit): Promise<void> => {
+    setApplying(`${hit.source}:${hit.id}`)
+    try {
+      const d = await window.api.lookupDetails(hit.source, hit.id)
       setLookup(d)
       setHits(null)
+      const systemId = matchSystem(d.platforms.length ? d.platforms : hit.platforms, lib?.systems ?? [])
       setV((x) => {
         const next: GameInput = {
           ...x,
@@ -135,22 +159,53 @@ export function GameEditor({
           publisher: d.publisher || x.publisher,
           releaseDate: d.releaseDate || x.releaseDate,
           genreNames: d.genres.length ? d.genres : x.genreNames,
-          steamAppId: x.steamAppId ?? d.appId
+          steamAppId: x.steamAppId ?? d.appId,
+          igdbId: d.igdbId ?? x.igdbId ?? null,
+          videoIds: d.videoIds.length ? d.videoIds : x.videoIds ?? [],
+          imageFiles: [...x.imageFiles, ...d.screenshotFiles.filter((f) => !x.imageFiles.includes(f))]
         }
         if (d.coverFile) {
           if (!x.coverFile) Object.assign(next, { coverFile: d.coverFile, coverFit: d.coverPortrait ? 'cover' : 'contain', coverPosX: 50, coverPosY: 50, coverZoom: 1 })
-          else next.imageFiles = [...x.imageFiles, d.coverFile] // keep the user's own cover; offer the found art as an extra image
+          else next.imageFiles = [...next.imageFiles, d.coverFile] // keep the user's own cover; offer the found art as an extra image
         }
+        // Single, untouched copy on a different system? Point it at the platform the game came out on.
+        if (!game && systemId && x.copies.length === 1 && !x.copies[0].id && x.copies[0].launchType === 'none' && d.platforms.length === 1)
+          next.copies = [{ ...x.copies[0], systemId }]
         return next
       })
       if (d.releaseDate) setDateDraft(d.releaseDate)
-      toast(`Filled in details for "${d.title}". Review them, then save.`, 'success')
+      toast(`Filled in details for "${d.title}" from ${hit.source === 'igdb' ? 'IGDB' : 'the Steam Store'}. Review them, then save.`, 'success')
+      loadArt(d.title, d.appId)
     } catch (e) {
       toast((e as Error).message, 'error')
     } finally {
       setApplying(null)
     }
   }
+
+  const useArt = async (kind: 'grid' | 'hero' | 'logo', opt: ArtOption): Promise<void> => {
+    setUsingArt(opt.id)
+    try {
+      const f = await window.api.downloadArt(opt.url)
+      if (kind === 'grid') set({ coverFile: f, coverFit: 'cover', coverPosX: 50, coverPosY: 50, coverZoom: 1 })
+      else if (kind === 'hero') set({ heroFile: f })
+      else set({ logoFile: f })
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    } finally {
+      setUsingArt(null)
+    }
+  }
+
+  // Background and logo for Big Picture: take SteamGridDB's top pick automatically if none is set yet.
+  useEffect(() => {
+    if (!art) return
+    ;(async () => {
+      if (!v.heroFile && art.heroes[0]) await useArt('hero', art.heroes[0])
+      if (!v.logoFile && art.logos[0]) await useArt('logo', art.logos[0])
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [art])
 
   /** Fields still holding exactly what the lookup returned (not manual edits). */
   const sourceFields = (final: GameInput): MetadataField[] => {
@@ -307,28 +362,75 @@ export function GameEditor({
               <div className="row" style={{ justifyContent: 'space-between' }}>
                 <span className="small muted">
                   {lookup
-                    ? <>Details filled in from the Steam Store catalogue (App ID {lookup.appId}). Edit anything you like before saving.</>
+                    ? <>Details filled in from {lookup.source === 'igdb' ? 'IGDB' : `the Steam Store (App ID ${lookup.appId})`}. Edit anything you like before saving.</>
                     : <>Find the description, genres, dates and box art online — works for games you own anywhere.</>}
                 </span>
-                <button type="button" className="btn sm" disabled={v.title.trim().length < 2 || searching} onClick={() => { setLookupDismissed(false); runSearch(v.title) }} data-testid="lookup-search">
-                  {searching ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <IconSearch size={14} />} {lookup ? 'Look up again' : 'Find details online'}
-                </button>
+                <span className="row" style={{ gap: 6 }}>
+                  {(lookup || v.title.trim().length > 1) && (
+                    <button type="button" className="btn sm" onClick={() => { setArtPicker(true); if (!art) loadArt(v.title, v.steamAppId) }} data-testid="art-open">
+                      <IconImage size={14} /> Artwork…
+                    </button>
+                  )}
+                  <button type="button" className="btn sm" disabled={v.title.trim().length < 2 || searching} onClick={() => { setLookupDismissed(false); runSearch(v.title) }} data-testid="lookup-search">
+                    {searching ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <IconSearch size={14} />} {lookup ? 'Look up again' : 'Find details online'}
+                  </button>
+                </span>
               </div>
-              {searchError && <div className="err-text small" style={{ marginTop: 6 }}>Couldn't search online: {searchError} You can still fill everything in by hand.</div>}
-              {hits && hits.length === 0 && <div className="small muted" style={{ marginTop: 6 }}>No matches on the Steam Store for "{lastSearched.current}". Console-only games often aren't listed — fill the details in by hand.</div>}
+              {searchErrors.map((err) => <div key={err} className="err-text small" style={{ marginTop: 6 }}>{err}</div>)}
+              {hits && hits.length === 0 && (
+                <div className="small muted" style={{ marginTop: 6 }}>
+                  No matches for "{lastSearched.current}". Check the spelling, or fill the details in by hand. Adding IGDB in Settings → Online sources finds console and retro games.
+                </div>
+              )}
               {hits && hits.length > 0 && (
                 <div className="lookup-hits">
                   {hits.map((h) => (
-                    <button type="button" key={h.appId} className="lookup-hit" onClick={() => applyHit(h)} disabled={applying != null} data-testid="lookup-hit">
-                      <img src={h.thumb} alt="" onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} />
-                      <span className="name">{h.name}</span>
-                      {applying === h.appId ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <span className="use">Use</span>}
+                    <button type="button" key={`${h.source}:${h.id}`} className="lookup-hit" onClick={() => applyHit(h)} disabled={applying != null} data-testid="lookup-hit">
+                      {h.thumb ? <img src={h.thumb} alt="" className={h.source === 'igdb' ? 'portrait' : ''} onError={(e) => ((e.target as HTMLImageElement).style.visibility = 'hidden')} /> : <span className="thumb-empty" />}
+                      <span className="name">
+                        <span style={{ display: 'block' }}>{h.name}</span>
+                        <span className="muted small">{[h.year, h.platforms.slice(0, 4).join(', ')].filter(Boolean).join(' · ')}</span>
+                      </span>
+                      <span className={`src-badge ${h.source}`}>{h.source === 'igdb' ? 'IGDB' : 'Steam'}</span>
+                      {applying === `${h.source}:${h.id}` ? <span className="spinner" style={{ width: 14, height: 14 }} /> : <span className="use">Use</span>}
                     </button>
                   ))}
                   <button type="button" className="btn sm ghost" onClick={() => { setHits(null); setLookupDismissed(true) }}>None of these</button>
                 </div>
               )}
+              {(artLoading || (art && art.grids.length > 0)) && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="small" style={{ fontWeight: 600, color: 'var(--text-2)', marginBottom: 6 }}>
+                    Box art from SteamGridDB <span className="muted" style={{ fontWeight: 400 }}>· click to use{v.heroFile || v.logoFile ? ' · background & logo for Big Picture picked too' : ''}</span>
+                  </div>
+                  {artLoading ? <span className="spinner" /> : (
+                    <div className="art-strip">
+                      {art?.grids.slice(0, 8).map((g) => (
+                        <button type="button" key={g.id} className="art-opt" onClick={() => useArt('grid', g)} disabled={usingArt != null} aria-label="Use this box art" data-testid="art-grid">
+                          <img src={g.thumb} alt="" />
+                          {usingArt === g.id && <span className="spinner" />}
+                        </button>
+                      ))}
+                      <button type="button" className="art-opt more" onClick={() => setArtPicker(true)}>More…</button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
+            {artPicker && (
+              <ArtPicker
+                art={art}
+                loading={artLoading}
+                current={{ hero: v.heroFile ?? null, logo: v.logoFile ?? null }}
+                busyId={usingArt}
+                onUse={useArt}
+                onClearHero={() => set({ heroFile: null })}
+                onClearLogo={() => set({ logoFile: null })}
+                onSearch={(t) => loadArt(t, null)}
+                defaultTerm={v.title}
+                onClose={() => setArtPicker(false)}
+              />
+            )}
 
             {v.wishlist && (
               <label className="field">
@@ -612,5 +714,75 @@ function CoverEditor({ v, set, onPick, kind }: { v: GameInput; set: (p: Partial<
       )}
       {!v.coverFile && <span className="hint">Upload, or drag an image file onto the frame. A generated placeholder is used until then.</span>}
     </div>
+  )
+}
+
+/** Pick box art, Big Picture background and logo from SteamGridDB. */
+function ArtPicker({
+  art,
+  loading,
+  current,
+  busyId,
+  onUse,
+  onClearHero,
+  onClearLogo,
+  onSearch,
+  defaultTerm,
+  onClose
+}: {
+  art: ArtSet | null
+  loading: boolean
+  current: { hero: string | null; logo: string | null }
+  busyId: number | null
+  onUse: (kind: 'grid' | 'hero' | 'logo', o: ArtOption) => void
+  onClearHero: () => void
+  onClearLogo: () => void
+  onSearch: (term: string) => void
+  defaultTerm: string
+  onClose: () => void
+}): JSX.Element {
+  const [tab, setTab] = useState<'grid' | 'hero' | 'logo'>('grid')
+  const [term, setTerm] = useState(defaultTerm)
+  const list = art ? (tab === 'grid' ? art.grids : tab === 'hero' ? art.heroes : art.logos) : []
+  return (
+    <Modal title="Artwork from SteamGridDB" onClose={onClose} size="wide">
+      <div className="tabs">
+        <button className={tab === 'grid' ? 'on' : ''} onClick={() => setTab('grid')}>Box art</button>
+        <button className={tab === 'hero' ? 'on' : ''} onClick={() => setTab('hero')}>Background (Big Picture)</button>
+        <button className={tab === 'logo' ? 'on' : ''} onClick={() => setTab('logo')}>Logo (Big Picture)</button>
+      </div>
+      <div className="modal-body">
+        <form className="row" style={{ marginBottom: 12 }} onSubmit={(e) => { e.preventDefault(); onSearch(term) }}>
+          <input className="input" style={{ flex: 1 }} value={term} onChange={(e) => setTerm(e.target.value)} aria-label="Search SteamGridDB" />
+          <button className="btn" type="submit"><IconSearch size={14} /> Search</button>
+        </form>
+        {tab !== 'grid' && (current.hero || current.logo) && (
+          <div className="row small muted" style={{ marginBottom: 10 }}>
+            {tab === 'hero' && current.hero && <><span>Background chosen.</span><button className="btn sm ghost" onClick={onClearHero}>Remove</button></>}
+            {tab === 'logo' && current.logo && <><span>Logo chosen.</span><button className="btn sm ghost" onClick={onClearLogo}>Remove</button></>}
+          </div>
+        )}
+        {loading ? (
+          <div className="center-load"><span className="spinner lg" /> Loading artwork…</div>
+        ) : !art ? (
+          <p className="muted">Add a SteamGridDB API key in Settings → Online sources to browse community artwork.</p>
+        ) : list.length === 0 ? (
+          <p className="muted">No {tab === 'grid' ? 'box art' : tab === 'hero' ? 'backgrounds' : 'logos'} found. Try another search.</p>
+        ) : (
+          <div className={`art-grid ${tab}`}>
+            {list.map((o) => (
+              <button key={o.id} className="art-opt" onClick={() => onUse(tab, o)} disabled={busyId != null} data-testid={`art-${tab}`}>
+                <img src={o.thumb} alt="" loading="lazy" />
+                {busyId === o.id && <span className="spinner" />}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+      <div className="modal-foot">
+        <span className="left muted small">Chosen images are downloaded into GameVault's data folder.</span>
+        <button className="btn primary" onClick={onClose}>Done</button>
+      </div>
+    </Modal>
   )
 }

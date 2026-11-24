@@ -463,7 +463,7 @@ export function saveGame(db: DB, input: GameInput, opts: { source?: Game['source
       const locked = new Set<MetadataField>(input.lockedFields ?? before.lockedFields)
       // Games linked to Steam (imported, or details looked up from the Steam Store) remember
       // which fields the user changed by hand so refreshes never overwrite them.
-      if (before.source === 'steam' || before.steamAppId || input.steamAppId) {
+      if (before.source === 'steam' || before.steamAppId || input.steamAppId || before.igdbId || input.igdbId) {
         const genreNames = (ids: number[]): string =>
           listTags(db, 'genres')
             .filter((t) => ids.includes(t.id))

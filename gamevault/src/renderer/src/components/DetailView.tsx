@@ -169,6 +169,16 @@ export function DetailView({ game, onClose, onEdit, onGotIt }: { game: Game; onC
     }
   }
 
+  const refreshIgdb = async (): Promise<void> => {
+    try {
+      putGame(await window.api.refreshIgdb(game.id))
+      await reload()
+      toast('Details refreshed from IGDB. Your notes, rating and edited fields were kept.', 'success')
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    }
+  }
+
   const refreshSteam = async (): Promise<void> => {
     try {
       await window.api.steamRefresh([game.id], { fetchMetadata: true, downloadArtwork: true })
@@ -200,7 +210,11 @@ export function DetailView({ game, onClose, onEdit, onGotIt }: { game: Game; onC
         <div className="detail-top">
           <button className="btn" onClick={onClose} data-testid="detail-back"><IconBack size={16} /> Back</button>
           <span className="spacer" />
-          {game.steamAppId && <button className="btn" onClick={refreshSteam} title="Re-download metadata and artwork from Steam"><IconRefresh size={16} /> Refresh from Steam</button>}
+          {game.igdbId ? (
+            <button className="btn" onClick={refreshIgdb} title="Re-download details from IGDB" data-testid="refresh-igdb"><IconRefresh size={16} /> Refresh details</button>
+          ) : (
+            game.steamAppId && <button className="btn" onClick={refreshSteam} title="Re-download metadata and artwork from Steam"><IconRefresh size={16} /> Refresh from Steam</button>
+          )}
           <button className="btn" onClick={onEdit} data-testid="detail-edit"><IconEdit size={16} /> Edit</button>
           <button className="btn danger" onClick={del} data-testid="detail-delete"><IconTrash size={16} /> Delete</button>
         </div>

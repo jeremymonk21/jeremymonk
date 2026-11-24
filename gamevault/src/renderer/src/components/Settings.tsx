@@ -229,6 +229,95 @@ function SteamSettings({ onImport }: { onImport: (mode: 'library' | 'installed')
   )
 }
 
+function SourcesSettings(): JSX.Element {
+  const { toast } = useApp()
+  const [cfg, setCfg] = useState<{ igdb: boolean; igdbClientId: string; sgdb: boolean } | null>(null)
+  const [clientId, setClientId] = useState('')
+  const [secret, setSecret] = useState('')
+  const [sgdbKey, setSgdbKey] = useState('')
+  const [busy, setBusy] = useState<string | null>(null)
+  const load = async (): Promise<void> => {
+    const c = await window.api.sourcesGetConfig()
+    setCfg(c)
+    setClientId(c.igdbClientId)
+  }
+  useEffect(() => {
+    load().catch(() => undefined)
+  }, [])
+  const saveAndTest = async (which: 'igdb' | 'sgdb'): Promise<void> => {
+    setBusy(which)
+    try {
+      if (which === 'igdb') await window.api.sourcesSetConfig({ igdbClientId: clientId, ...(secret ? { igdbClientSecret: secret } : {}) })
+      else if (sgdbKey) await window.api.sourcesSetConfig({ sgdbKey })
+      setSecret('')
+      setSgdbKey('')
+      await load()
+      toast(await window.api.sourcesTest(which), 'success')
+    } catch (e) {
+      toast((e as Error).message, 'error')
+    } finally {
+      setBusy(null)
+    }
+  }
+  const remove = async (which: 'igdb' | 'sgdb'): Promise<void> => {
+    await window.api.sourcesSetConfig(which === 'igdb' ? { igdbClientId: null, igdbClientSecret: null } : { sgdbKey: null })
+    await load()
+    toast(which === 'igdb' ? 'IGDB keys removed.' : 'SteamGridDB key removed.', 'success')
+  }
+  const link = (url: string, label: string): JSX.Element => (
+    <a href="#" onClick={(e) => { e.preventDefault(); window.api.openExternal(url) }}>{label}</a>
+  )
+  return (
+    <div className="section" id="settings-sources">
+      <h3>Online sources (optional)</h3>
+      <p className="small" style={{ marginTop: -4, color: 'var(--text-2)' }}>
+        Used by <b>Add Game</b> to fill in details and artwork for games on any system, including Nintendo and retro consoles. Keys stay on this PC, encrypted with your Windows account, and aren't included in backups.
+      </p>
+      <div className="source-block">
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <b>IGDB — game details for every platform</b>
+          {cfg?.igdb && <span className="status-pill ready">Connected</span>}
+        </div>
+        <ol className="steps small">
+          <li>Go to {link('https://dev.twitch.tv/console', 'dev.twitch.tv/console')} (sign in with Twitch) and choose <b>Register Your Application</b>.</li>
+          <li>Name: <code>GameVault</code> · OAuth Redirect URL: <code>http://localhost</code> · Category: <b>Application Integration</b> · Client type: <b>Confidential</b>.</li>
+          <li>Open the app, copy the <b>Client ID</b>, click <b>New Secret</b> and copy the secret.</li>
+        </ol>
+        <div className="grid-2" style={{ marginTop: 8 }}>
+          <label className="field">Client ID<input className="input" value={clientId} onChange={(e) => setClientId(e.target.value)} autoComplete="off" data-testid="igdb-client-id" /></label>
+          <label className="field">
+            Client Secret {cfg?.igdb && <span className="ok">· saved</span>}
+            <input className="input" type="password" value={secret} onChange={(e) => setSecret(e.target.value)} placeholder={cfg?.igdb ? '•••••••• (enter a new one to replace)' : ''} autoComplete="off" data-testid="igdb-secret" />
+          </label>
+        </div>
+        <div className="row" style={{ marginTop: 10 }}>
+          <button className="btn primary" disabled={!clientId.trim() || (!secret && !cfg?.igdb) || busy != null} onClick={() => saveAndTest('igdb')} data-testid="igdb-save">
+            {busy === 'igdb' && <span className="spinner" />} Save &amp; test
+          </button>
+          {cfg?.igdb && <button className="btn danger" onClick={() => remove('igdb')}>Remove</button>}
+        </div>
+      </div>
+      <div className="source-block">
+        <div className="row" style={{ justifyContent: 'space-between' }}>
+          <b>SteamGridDB — box art, backgrounds and logos</b>
+          {cfg?.sgdb && <span className="status-pill ready">Connected</span>}
+        </div>
+        <ol className="steps small">
+          <li>Sign in at {link('https://www.steamgriddb.com/profile/preferences/api', 'steamgriddb.com → Profile → Preferences → API')}.</li>
+          <li>Click <b>Generate API Key</b> and paste it here.</li>
+        </ol>
+        <div className="row" style={{ marginTop: 8 }}>
+          <input className="input" style={{ flex: 1 }} type="password" value={sgdbKey} onChange={(e) => setSgdbKey(e.target.value)} placeholder={cfg?.sgdb ? '•••••••• (enter a new key to replace)' : 'API key'} autoComplete="off" data-testid="sgdb-key" />
+          <button className="btn primary" disabled={(!sgdbKey && !cfg?.sgdb) || busy != null} onClick={() => saveAndTest('sgdb')} data-testid="sgdb-save">
+            {busy === 'sgdb' && <span className="spinner" />} Save &amp; test
+          </button>
+          {cfg?.sgdb && <button className="btn danger" onClick={() => remove('sgdb')}>Remove</button>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function SettingsView({ onImport }: { onImport: (mode: 'library' | 'installed') => void }): JSX.Element {
   const { lib, reload, toast, confirm } = useApp()
   const [busy, setBusy] = useState<string | null>(null)
@@ -319,6 +408,7 @@ export function SettingsView({ onImport }: { onImport: (mode: 'library' | 'insta
       )}
       <TagManager table="categories" tags={lib?.categories ?? []} title="Custom categories" help='Your own groupings, such as "Backlog", "Couch co-op" or "Comfort games". Separate from genres.' />
       <Systems />
+      <SourcesSettings />
       <SteamSettings onImport={onImport} />
       <TagManager table="genres" tags={lib?.genres ?? []} title="Genres" help="Genres come from game metadata or what you type in the editor. Rename or tidy them here." />
       <p className="muted small">GameVault {version}</p>

@@ -5,6 +5,7 @@ import { pathToFileURL } from 'url'
 import * as db from './db'
 import { cleanupImages, downloadImage, importImageFile, initImages, resolveImage, IMAGE_EXTENSIONS } from './images'
 import { artworkUrls, detectSteamPath, getOwnedGames, getStoreDetails, installedSteamApps, resolveSteamId, searchStore, SteamError } from './steam'
+import { igdbConfigured, igdbDetails, igdbSearch, sgdbArt, sgdbConfigured, testIgdb, testSgdb } from './sources'
 import { checkCopy, launchCopy, openSteamInstall, type LaunchContext } from './launcher'
 import { buildCsv, createBackup, stageRestore, swapInStaged } from './backup'
 import { removeSampleTags, seedSamplesIfFirstRun } from './samples'
@@ -17,7 +18,9 @@ import type {
   GamePatch,
   ImportProgress,
   Library,
+  LookupHit,
   LookupResult,
+  SourcesConfig,
   MetadataField,
   SteamConfig,
   SteamImportOptions,
@@ -271,23 +274,66 @@ function registerIpc(): void {
     runImport(items, opts, true)
     return true
   })
-  // ---- online details lookup (Steam Store catalogue; no key or ownership needed) ----
-  handle('meta:search', (term: string) => searchStore(term))
-  handle('meta:details', async (appId: number): Promise<LookupResult> => {
-    const d = await getStoreDetails(appId)
-    if (!d) throw new Error('The Steam Store has no details for this game.')
-    const cover = await fetchCover(appId, d.headerImage)
-    return {
-      appId,
-      title: d.title ?? '',
-      description: d.description ?? '',
-      developer: d.developer ?? '',
-      publisher: d.publisher ?? '',
-      releaseDate: d.releaseDate ?? '',
-      genres: d.genres ?? [],
-      coverFile: cover?.file ?? null,
-      coverPortrait: cover?.portrait ?? false
+  // ---- online details lookup: Steam Store (no key) + IGDB (with the user's Twitch keys) ----
+  handle('meta:search', async (term: string): Promise<{ hits: LookupHit[]; errors: string[] }> => {
+    const errors: string[] = []
+    const jobs: Array<Promise<LookupHit[]>> = []
+    if (igdbConfigured()) jobs.push(igdbSearch(term).catch((e) => (errors.push(`IGDB: ${(e as Error).message}`), [])))
+    jobs.push(
+      searchStore(term)
+        .then((r) => r.map((h) => ({ source: 'steam' as const, id: h.appId, name: h.name, year: '', platforms: ['PC'], thumb: h.thumb })))
+        .catch((e) => (errors.push(`Steam: ${(e as Error).message}`), []))
+    )
+    const [a, b = []] = await Promise.all(jobs)
+    return { hits: [...a, ...b].slice(0, 12), errors }
+  })
+  handle('meta:details', async (source: 'igdb' | 'steam', id: number): Promise<LookupResult> => {
+    if (source === 'igdb') {
+      const d = await igdbDetails(id)
+      if (!d) throw new Error('IGDB has no details for this game.')
+      const cover = d.coverUrl ? await downloadImage(d.coverUrl) : null
+      const shots = (await Promise.all(d.screenshotUrls.slice(0, 3).map((u) => downloadImage(u)))).filter((f): f is string => !!f)
+      return {
+        source, appId: null, igdbId: d.id, title: d.title, description: d.description, developer: d.developer, publisher: d.publisher,
+        releaseDate: d.releaseDate, genres: d.genres, platforms: d.platforms, coverFile: cover, coverPortrait: true, screenshotFiles: shots, videoIds: d.videoIds
+      }
     }
+    const d = await getStoreDetails(id)
+    if (!d) throw new Error('The Steam Store has no details for this game.')
+    const cover = await fetchCover(id, d.headerImage)
+    return {
+      source, appId: id, igdbId: null, title: d.title ?? '', description: d.description ?? '', developer: d.developer ?? '', publisher: d.publisher ?? '',
+      releaseDate: d.releaseDate ?? '', genres: d.genres ?? [], platforms: ['PC'], coverFile: cover?.file ?? null, coverPortrait: cover?.portrait ?? false,
+      screenshotFiles: [], videoIds: []
+    }
+  })
+  handle('art:list', async (title: string, steamAppId: number | null) => sgdbArt(title, steamAppId))
+  handle('art:download', async (url: string) => {
+    if (!/^https?:\/\//.test(url)) throw new Error('Invalid image address.')
+    const f = await downloadImage(url, 30000)
+    if (!f) throw new Error('That image could not be downloaded.')
+    return f
+  })
+  handle('sources:getConfig', (): SourcesConfig => ({ igdb: igdbConfigured(), igdbClientId: getSecret('igdb_client_id') ?? '', sgdb: sgdbConfigured() }))
+  handle('sources:setConfig', (c: { igdbClientId?: string | null; igdbClientSecret?: string | null; sgdbKey?: string | null }) => {
+    if (c.igdbClientId !== undefined) setSecret('igdb_client_id', c.igdbClientId ? c.igdbClientId.trim() : null)
+    if (c.igdbClientSecret !== undefined) setSecret('igdb_client_secret', c.igdbClientSecret ? c.igdbClientSecret.trim() : null)
+    if (c.sgdbKey !== undefined) setSecret('sgdb_key', c.sgdbKey ? c.sgdbKey.trim() : null)
+    return true
+  })
+  handle('sources:test', (which: 'igdb' | 'sgdb') => (which === 'igdb' ? testIgdb() : testSgdb()))
+  // Re-fetch IGDB details for a game; personal data and hand-edited fields are kept.
+  handle('meta:refreshIgdb', async (gameId: number) => {
+    const g = db.getGame(database, gameId)
+    if (!g?.igdbId) throw new Error('This game is not linked to IGDB.')
+    const d = await igdbDetails(g.igdbId)
+    if (!d) throw new Error('IGDB has no details for this game any more.')
+    const cover = !g.coverFile && d.coverUrl ? await downloadImage(d.coverUrl) : null
+    db.applyExternalMetadata(database, gameId, {
+      title: d.title, description: d.description, developer: d.developer, publisher: d.publisher, releaseDate: d.releaseDate, genres: d.genres, coverFile: cover
+    })
+    if (d.videoIds.length) database.prepare('UPDATE games SET video_ids = ? WHERE id = ?').run(JSON.stringify(d.videoIds), gameId)
+    return db.getGame(database, gameId)
   })
 
   handle('steam:cancel', () => {

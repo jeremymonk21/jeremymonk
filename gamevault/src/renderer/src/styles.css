@@ -421,3 +421,24 @@ code, .mono { font-family: 'Cascadia Code', Consolas, monospace; font-size: 12.5
 .ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .app:has(.bulk-bar) ~ .toasts { bottom: 100px; }
+
+.lookup-hit img.portrait { width: 36px; height: 50px; }
+.lookup-hit .thumb-empty { width: 36px; height: 50px; border-radius: 4px; background: var(--panel); flex: none; }
+.src-badge { height: 22px; padding: 0 8px; border-radius: 6px; font-size: 11px; font-weight: 700; display: inline-flex; align-items: center; flex: none; }
+.src-badge.igdb { background: rgba(157,144,255,.16); color: #d6d1ff; }
+.src-badge.steam { background: rgba(45,140,240,.16); color: #cfe4ff; }
+.art-strip { display: grid; grid-template-columns: repeat(9, minmax(0, 1fr)); gap: 8px; }
+.art-opt { position: relative; padding: 0; border: 2px solid transparent; border-radius: 8px; overflow: hidden; background: var(--bg-2); cursor: pointer; aspect-ratio: 2 / 3; display: grid; place-items: center; }
+.art-opt:hover { border-color: var(--accent); }
+.art-opt img { width: 100%; height: 100%; object-fit: cover; }
+.art-opt .spinner { position: absolute; }
+.art-opt.more { color: var(--text-2); font-size: 12px; }
+.art-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 10px; }
+.art-grid.hero { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); }
+.art-grid.hero .art-opt { aspect-ratio: 96 / 31; }
+.art-grid.logo .art-opt { aspect-ratio: 16 / 9; background: repeating-conic-gradient(#20253a 0% 25%, #171b28 0% 50%) 50% / 20px 20px; }
+.art-grid.logo .art-opt img { object-fit: contain; padding: 10px; }
+
+.source-block { border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; background: var(--bg-2); margin-top: 12px; }
+.copy-card .grid-3 { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); }
+.copy-card .segmented { flex-wrap: nowrap; }

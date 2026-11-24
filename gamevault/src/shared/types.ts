@@ -221,16 +221,50 @@ export interface GameInput {
   sourceFields?: MetadataField[]
 }
 
+export interface LookupHit {
+  source: 'igdb' | 'steam'
+  id: number
+  name: string
+  year: string
+  platforms: string[]
+  thumb: string
+}
+
 export interface LookupResult {
-  appId: number
+  source: 'igdb' | 'steam'
+  /** Steam App ID when the source is Steam (kept for de-duplication with Steam imports). */
+  appId: number | null
+  igdbId: number | null
   title: string
   description: string
   developer: string
   publisher: string
   releaseDate: string
   genres: string[]
+  platforms: string[]
   coverFile: string | null
   coverPortrait: boolean
+  screenshotFiles: string[]
+  videoIds: string[]
+}
+
+export interface ArtOption {
+  id: number
+  url: string
+  thumb: string
+}
+
+export interface ArtSet {
+  sgdbGameId: number | null
+  grids: ArtOption[]
+  heroes: ArtOption[]
+  logos: ArtOption[]
+}
+
+export interface SourcesConfig {
+  igdb: boolean
+  igdbClientId: string
+  sgdb: boolean
 }
 
 /** Quick, personal edits that never touch imported metadata. */
