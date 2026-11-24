@@ -1,9 +1,10 @@
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell } from 'electron'
-import { existsSync, mkdirSync, writeFileSync } from 'fs'
-import { join } from 'path'
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from 'electron'
+import { createReadStream, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'fs'
+import { Readable } from 'stream'
+import { extname, join, relative, resolve, sep } from 'path'
 import { pathToFileURL } from 'url'
 import * as db from './db'
-import { cleanupImages, downloadImage, importImageFile, initImages, resolveImage, IMAGE_EXTENSIONS } from './images'
+import { cleanupImages, CLIP_EXTENSIONS, downloadImage, importClipFile, importImageFile, initImages, resolveImage, IMAGE_EXTENSIONS } from './images'
 import { artworkUrls, detectSteamPath, getOwnedGames, getStoreDetails, installedSteamApps, resolveSteamId, searchStore, SteamError } from './steam'
 import { igdbConfigured, igdbDetails, igdbSearch, sgdbArt, sgdbConfigured, testIgdb, testSgdb } from './sources'
 import { emulatorStatus, scanEmulatorFolder } from './emulators'
@@ -32,7 +33,61 @@ import type {
   SystemKind
 } from '@shared/types'
 
-protocol.registerSchemesAsPrivileged([{ scheme: 'gvimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }])
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'gvimg', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } },
+  { scheme: 'gvmedia', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
+])
+
+const AUDIO_EXTENSIONS = ['mp3', 'ogg', 'oga', 'flac', 'wav', 'm4a', 'aac', 'opus']
+const MIME: Record<string, string> = {
+  mp3: 'audio/mpeg', ogg: 'audio/ogg', oga: 'audio/ogg', opus: 'audio/ogg', flac: 'audio/flac', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac',
+  mp4: 'video/mp4', m4v: 'video/mp4', webm: 'video/webm'
+}
+
+/** Serves a local file with HTTP range support (needed for audio/video seeking). */
+function serveFile(full: string, req: Request): Response {
+  const size = statSync(full).size
+  const type = MIME[extname(full).slice(1).toLowerCase()] ?? 'application/octet-stream'
+  const range = /bytes=(\d*)-(\d*)/.exec(req.headers.get('range') ?? '')
+  const toWeb = (stream: ReturnType<typeof createReadStream>): ReadableStream => Readable.toWeb(stream) as unknown as ReadableStream
+  if (range) {
+    const start = range[1] ? Number(range[1]) : 0
+    const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1
+    if (start >= size || start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${size}` } })
+    return new Response(toWeb(createReadStream(full, { start, end })), {
+      status: 206,
+      headers: { 'Content-Type': type, 'Content-Length': String(end - start + 1), 'Content-Range': `bytes ${start}-${end}/${size}`, 'Accept-Ranges': 'bytes' }
+    })
+  }
+  return new Response(toWeb(createReadStream(full)), { status: 200, headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } })
+}
+
+/** Audio files in the user's music folder (and its sub-folders), relative paths. */
+function listMusic(folder: string): string[] {
+  const out: string[] = []
+  const walk = (dir: string, depth: number): void => {
+    let entries: string[] = []
+    try {
+      entries = readdirSync(dir)
+    } catch {
+      return
+    }
+    for (const n of entries) {
+      if (n.startsWith('.')) continue
+      const full = join(dir, n)
+      try {
+        if (statSync(full).isDirectory()) {
+          if (depth < 3) walk(full, depth + 1)
+        } else if (AUDIO_EXTENSIONS.includes(extname(n).slice(1).toLowerCase())) out.push(relative(folder, full))
+      } catch {
+        /* skip */
+      }
+      if (out.length >= 2000) return
+    }
+  }
+  if (folder && existsSync(folder)) walk(folder, 0)
+  return out
+}
 
 const DATA_DIR = process.env.GAMEVAULT_DATA_DIR || join(app.getPath('userData'), 'data')
 mkdirSync(DATA_DIR, { recursive: true })
@@ -148,6 +203,19 @@ function registerIpc(): void {
     const next = { ...getPrefs(), ...p }
     db.setSetting(database, 'prefs', JSON.stringify(next))
     return next
+  })
+  handle('window:fullscreen', (on: boolean) => {
+    win?.setFullScreen(!!on)
+    return win?.isFullScreen() ?? false
+  })
+  handle('music:list', () => {
+    const tracks = listMusic(getPrefs().musicFolder)
+    return tracks.map((t) => `gvmedia://music/${t.split(sep).map(encodeURIComponent).join('/')}`)
+  })
+  handle('media:pickClip', async () => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Choose a video clip', properties: ['openFile'], filters: [{ name: 'Video', extensions: CLIP_EXTENSIONS }] })
+    if (r.canceled) return null
+    return importClipFile(r.filePaths[0])
   })
   handle('games:patchMany', (ids: number[], patch: GamePatch) => db.patchGames(database, ids, patch))
   handle('collection:create', (name: string) => db.createCollection(database, name))
@@ -650,7 +718,24 @@ if (!gotLock) {
       const file = decodeURIComponent(new URL(req.url).pathname.replace(/^\/+/, ''))
       const full = resolveImage(file)
       if (!full || !existsSync(full)) return new Response('Not found', { status: 404 })
+      if (MIME[extname(full).slice(1).toLowerCase()]) return serveFile(full, req)
       return net.fetch(pathToFileURL(full).toString())
+    })
+    // gvmedia://music/<relative path> — only files inside the user's chosen music folder.
+    protocol.handle('gvmedia', (req) => {
+      const u = new URL(req.url)
+      const folder = getPrefs().musicFolder
+      if (u.hostname !== 'music' || !folder) return new Response('Not found', { status: 404 })
+      const rel = decodeURIComponent(u.pathname.replace(/^\/+/, ''))
+      const full = resolve(folder, rel)
+      if (!full.startsWith(resolve(folder) + sep) || !AUDIO_EXTENSIONS.includes(extname(full).slice(1).toLowerCase()) || !existsSync(full))
+        return new Response('Not found', { status: 404 })
+      return serveFile(full, req)
+    })
+    // YouTube refuses to play embedded trailers for pages without a web origin (file://); send a referrer for its requests.
+    session.defaultSession.webRequest.onBeforeSendHeaders({ urls: ['https://*.youtube-nocookie.com/*', 'https://*.youtube.com/*', 'https://*.googlevideo.com/*'] }, (details, cb) => {
+      details.requestHeaders['Referer'] = 'https://gamevault.local/'
+      cb({ requestHeaders: details.requestHeaders })
     })
 
     registerIpc()

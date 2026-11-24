@@ -592,6 +592,25 @@ export function GameEditor({
               </div>
             )}
 
+            {!v.wishlist && (
+              <div className="field">
+                <span className="row" style={{ justifyContent: 'space-between' }}>
+                  Big Picture
+                  <span className="row" style={{ gap: 6 }}>
+                    <button type="button" className="btn sm" onClick={async () => { try { const f = await window.api.pickClip(); if (f) set({ clipFile: f }) } catch (e) { toast((e as Error).message, 'error') } }} data-testid="clip-upload">
+                      <IconUpload size={14} /> {v.clipFile ? 'Replace video clip' : 'Add video clip'}
+                    </button>
+                    {v.clipFile && <button type="button" className="btn sm danger" onClick={() => set({ clipFile: null })}>Remove clip</button>}
+                  </span>
+                </span>
+                <span className="hint">
+                  {v.clipFile ? 'Your clip plays on this game’s Big Picture page.' : 'Optional MP4/WebM gameplay clip (up to 200 MB) to play in Big Picture.'}
+                  {(v.videoIds ?? []).length > 0 && ' An IGDB trailer is also available.'}
+                  {v.heroFile || v.logoFile ? ` Background${v.logoFile ? ' and logo' : ''} set.` : ' Use Artwork… above to pick a background and logo.'}
+                </span>
+              </div>
+            )}
+
             <div className="field">
               <span className="row" style={{ justifyContent: 'space-between' }}>
                 Additional images

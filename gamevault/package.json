@@ -1,7 +1,7 @@
 {
   "name": "gamevault",
   "productName": "GameVault",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A personal video game collection manager with a box-art gallery.",
   "author": "GameVault",
   "license": "MIT",

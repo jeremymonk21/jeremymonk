@@ -119,6 +119,9 @@ const api = {
       ipcRenderer.removeListener('scan:progress', listener)
     }
   },
+  setFullScreen: (on: boolean) => call<boolean>('window:fullscreen', on),
+  listMusic: () => call<string[]>('music:list'),
+  pickClip: () => call<string | null>('media:pickClip'),
   getPrefs: () => call<AppPrefs>('prefs:get'),
   setPrefs: (p: Partial<AppPrefs>) => call<AppPrefs>('prefs:set', p),
   onPlaySession: (fn: (s: { gameId: number; seconds: number }) => void) => {

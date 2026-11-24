@@ -2,7 +2,7 @@
 
 A Windows desktop app for managing your personal video game collection: physical and digital, PC and console. It centres on a box-art gallery.
 
-- Dark theme, sidebar with **All Games**, **Favorites** and your systems
+- Dark theme, sidebar with **All Games**, **Playing**, **Backlog**, **Favorites**, **Wishlist**, your systems and your own **collections**
 - Responsive box-art gallery with a card-size slider. Artwork is never stretched: you can fill and crop it with drag-to-position and zoom, or show the whole image over a blurred backdrop.
 - Search, filters that work together (system → genre / custom category / play status / format / favorites) and four sort orders
 - Multiple copies per game (for example PS5 physical plus PC digital on Steam), custom systems, genres kept separate from your own categories
@@ -10,6 +10,10 @@ A Windows desktop app for managing your personal video game collection: physical
 - Launches installed games: Steam games through Steam, any other game through an `.exe` or a Windows shortcut, with optional arguments and working directory
 - Optional Steam library import with a preview. Re-imports never create duplicates, and your notes, ratings and edits are kept when metadata is refreshed.
 - One-file backup and restore (collection, artwork, notes, ratings, categories) and CSV export
+- Play time tracking for everything launched from GameVault, a **Stats** page and **Surprise me**
+- Optional online details from **IGDB** and artwork from **SteamGridDB**, for any system including Nintendo and retro
+- **Emulator** support: point GameVault at your game folders, it finds the games, and **Play** opens them in the right emulator
+- **Big Picture** mode: full-screen and controller-driven (Xbox controller), with background music and video clips
 - Works fully offline. All data stays on your PC.
 
 ---
@@ -22,7 +26,7 @@ Every push that changes `gamevault/` runs the **GameVault – Windows build** Gi
 
 1. Open the repository on GitHub, go to **Actions** and pick **GameVault – Windows build**.
 2. Open the latest green run and download the **GameVault-Windows-Installer** artifact (a zip).
-3. Unzip it and run `GameVault-Setup-1.0.0.exe`.
+3. Unzip it and run `GameVault-Setup-1.1.0.exe`.
 
 The installer isn't code-signed, so Windows SmartScreen may say *"Windows protected your PC"*. Click **More info → Run anyway**. The installer asks where to install. It also creates Start-menu and desktop shortcuts and adds a normal uninstaller under *Settings → Apps*.
 
@@ -37,7 +41,7 @@ npm ci                 # installs everything and fetches the Windows SQLite bina
 npm run dist           # builds the app and the installer
 ```
 
-The installer is written to `gamevault\release\1.0.0\GameVault-Setup-1.0.0.exe`. If you only want an unpacked folder you can run directly (`release\1.0.0\win-unpacked\GameVault.exe`), use `npm run dist:dir`.
+The installer is written to `gamevault\release\1.1.0\GameVault-Setup-1.1.0.exe`. If you only want an unpacked folder you can run directly (`release\1.1.0\win-unpacked\GameVault.exe`), use `npm run dist:dir`.
 
 > Build the installer **on Windows**. If you cross-build from Linux or macOS, the package contains that OS's SQLite binary and the app won't start on Windows.
 
@@ -66,6 +70,28 @@ npm run dev        # hot-reloading app window
 | Launch a game | Open it, go to **Copies & launching**, then **Set up launch…**. **Play** appears once a working launch method exists. |
 | Remove the sample games | **Remove samples** in the banner, or in Settings |
 
+### Organizing: Playing, Backlog, Collections, Wishlist
+
+- **Playing** lists exactly the games you set to *Playing*. Launching a *Not Started* game from GameVault sets it to Playing for you.
+- **Backlog** holds only games you mark with **+ Backlog** (on the game page, in the editor, or with Select). Setting a game to Playing takes it off the backlog.
+- **Collections** are groups you make yourself (e.g. *Digimon*), shown in the sidebar. Click **+** next to Collections to create one. Add games with **Add games…** on the collection page, the **Collections** box on a game's page, or **Select** several cards and choose **Add to collection…**. A game can be in as many collections as you like, and removing it from a collection never deletes the game.
+- **Wishlist** keeps games you want but don't own yet, with box art and a note. They don't count towards your collection, filters or stats. When you get one, click **I got it!**, pick the system and format, and it moves into your collection with its note.
+- **Select** (top right) turns on multi-select: tick cards, then add them to a collection, mark them Backlog or Playing, or favorite them in one go.
+- **Surprise me** picks a random game from your backlog, a system, a collection or everything.
+
+### Play time and stats
+
+GameVault times every session it launches:
+
+- **Programs and emulators** are timed from start to exit.
+- **Windows shortcuts (`.lnk`)** are timed by starting the program the shortcut points to.
+- **Steam** starts its games itself, so GameVault watches the *RunningAppID* value Steam keeps in the Windows registry while a game runs.
+- Hours from your **Steam import** are included in the total.
+- `.url` shortcuts (for example some Epic Games links) can be launched but can't be timed.
+- Sessions shorter than 15 seconds are ignored.
+
+Each game page shows the total, the number of sessions, when you last played and a 14-day chart. **Stats** (bottom of the sidebar) shows games owned, completed, hours played per month, the most-played games and games per system.
+
 ### Owned vs installed
 
 Every copy is an **owned** collection entry. A copy only counts as **installed** and gets a **Play** button when it has a launch method that GameVault can confirm works on this PC:
@@ -73,9 +99,68 @@ Every copy is an **owned** collection entry. A copy only counts as **installed**
 - **Steam** copies launch through the Steam client (`steam://rungameid/<appid>`). GameVault reads Steam's local `appmanifest_*.acf` files to check that the game really is installed. Importing from Steam does **not** mark games as installed. Only games that Steam reports as installed on this PC get Steam launching turned on automatically.
 - **Program / shortcut** copies run an `.exe`, `.lnk`, `.url`, `.bat` or `.cmd` file, with optional arguments and an optional working directory.
 - If the file has moved, or Steam or the game isn't installed, the detail page explains the problem and hides **Play**. You can then **Edit launch…** or **Remove** the launch method. The game stays in your collection either way.
-- Console and physical games stay plain collection entries unless you set up a local launch method yourself, such as an emulator shortcut.
+- **Emulator** copies open a game file in one of your emulator setups. See *Emulation* below.
+- Console and physical games stay plain collection entries unless you set up a local launch method yourself, such as an emulator.
 
 ---
+
+## Online details and artwork (optional)
+
+**Add Game** searches as you type the title. Results from **IGDB** (every platform) and the **Steam Store** appear together, each labeled with its source. Click the right one to fill in:
+
+- The description, developer, publisher, release date and genres
+- Box art
+- Up to three screenshots
+- Trailers, if any
+- The system, set from the platform it came out on
+
+If SteamGridDB is set up, a strip of community box art appears underneath. GameVault also picks a wide background and a logo for Big Picture; you can change them with **Artwork…**. Everything stays editable. Fields you change by hand, and covers you pick yourself, are kept when you later use **Refresh details**.
+
+Set the services up in **Settings & Data → Online sources**:
+
+| Service | What it gives | How to get access |
+| --- | --- | --- |
+| **IGDB** | Details and covers for every system, including Nintendo, PS1–PS5 and retro | Sign in at dev.twitch.tv/console, then **Register Your Application** (name `GameVault`, OAuth redirect `http://localhost`, category *Application Integration*, client type *Confidential*). Copy the **Client ID**, click **New Secret** and copy the secret. Paste both into GameVault and click **Save & test**. |
+| **SteamGridDB** | Box art, Big Picture backgrounds and logos | On steamgriddb.com go to Profile → Preferences → **API**, then **Generate API Key**. Paste the key into GameVault and click **Save & test**. |
+
+The keys are stored only on this PC, encrypted with your Windows account, and are never included in backups. IGDB is free for non-commercial use and allows 4 requests per second, which GameVault respects.
+
+## Emulation
+
+Use game files and BIOS files that you have dumped from discs, cartridges and consoles you own.
+
+1. Install your emulators, for example DuckStation (PS1), PCSX2 (PS2), RPCS3 (PS3), PPSSPP (PSP), Dolphin (GameCube/Wii), Cemu (Wii U), or RetroArch with cores for older systems.
+2. Keep one folder per system, for example `D:\Games\PS1`, `D:\Games\PS2` and `D:\Games\GameCube`.
+3. In **Settings & Data → Emulators**, click **Add emulator** and pick one from the list. The arguments and file types are filled in for you; they stay editable because emulator options can change between versions. Then choose the emulator's `.exe`, the game folder and, for PS1 and PS2, the **BIOS folder**. GameVault warns you if the BIOS folder is empty.
+4. Click **Scan**. GameVault lists the new games it found:
+   - Titles are guessed from the file names, and you can fix any before adding.
+   - Multi-disc games with an `.m3u` playlist show up as a single game, and the `.bin` files behind a `.cue` sheet are skipped.
+   - Choose **Physical** or **Digital**. With IGDB set up, it also looks up each game's details and art for that system.
+5. **Play** on a game's page, or **A** in Big Picture, opens the game in the emulator. Play time is tracked. If a game file is moved or deleted, the game page says so and hides Play.
+
+Run **Scan** again whenever you add games to a folder. Files already in your collection are skipped.
+
+Nintendo Switch emulation is legally contested, so GameVault doesn't include a preset for it. Switch games stay normal collection entries. PS4 emulation is still early, and many games don't run.
+
+## Big Picture
+
+**Big Picture** (bottom of the sidebar, or **F11**) is a full-screen view built for a TV or a big monitor such as a 34" ultrawide, driven by an Xbox controller.
+
+| Controller | Keyboard | Home | Game page |
+| --- | --- | --- | --- |
+| D-pad / left stick | Arrow keys | Move between games and shelves | Move between actions |
+| **A** | Enter | Play | Select the highlighted action |
+| **B** | Esc | Menu | Back |
+| **X** | X | Game page (details & video) | Add to / remove from Backlog |
+| **Y** | Y | Favorite | Favorite |
+| **LB / RB** | Q / E | Previous / next shelf | Previous / next game |
+| **Menu** | Tab | Menu (music on/off, Exit Big Picture) | Menu |
+
+- **Shelves**: Playing, Backlog, Favorites, All Games, then each system and each of your collections.
+- **Music**: choose a folder of your own music in **Settings → Big Picture**. MP3, OGG, FLAC, WAV and M4A are supported. It plays shuffled, lowers while a clip plays, and pauses while a game is running.
+- **Video clips**: on a game's page, your own clip plays first. Add an MP4 or WebM of up to 200 MB in the game's editor under *Big Picture*. After that come the game's IGDB trailers (YouTube, so only when online; can be switched off), then screenshots.
+- **Background and logo** come from SteamGridDB. Without them the box art is used.
+- **Start GameVault in Big Picture** is an option under **Settings → Big Picture**.
 
 ## Steam integration (optional)
 
@@ -121,9 +206,9 @@ Without a key, you can still use **Import installed Steam games…**, which read
 
 **Settings & Data → Open data folder** opens it. Uploaded images are **copied** into this folder, so moving or deleting the originals never breaks a cover. Uninstalling keeps your data. Delete the folder yourself if you want it gone.
 
-- **Backup** writes a single `.zip` containing the database and every image. That covers games, copies, ratings, notes, favorites, statuses, systems, genres, categories and artwork.
+- **Backup** writes a single `.zip` containing the database and every image and video clip. That covers games, copies, ratings, notes, favorites, statuses, backlog, wishlist, collections, play time, emulator setups, systems, genres, categories, artwork and Big Picture settings. API keys are not included.
 - **Restore** checks the zip and verifies its database integrity. It saves a safety backup of your current data, then swaps the restored data in. If anything fails, your current data is left unchanged.
-- **Export CSV** writes UTF-8 with a BOM, so Excel opens it correctly. Columns: title, systems, formats, stores, genres, categories, status, rating, favorite, release date, developer, publisher, date added, Steam App ID and notes.
+- **Export CSV** writes UTF-8 with a BOM, so Excel opens it correctly. Columns: title, systems, formats, stores, genres, categories, status, rating, favorite, release date, developer, publisher, date added, Steam App ID, notes, collections, backlog, wishlist, hours played and last played.
 
 The database runs SQLite in WAL mode with `synchronous=FULL`. Notes autosave as you type. Any unsaved keystrokes are also written when you leave the notes box, switch games or close the window.
 
@@ -151,15 +236,19 @@ gamevault/
 │  ├─ images.ts     image import/download/cache (gvimg:// protocol)
 │  ├─ launcher.ts   launch checks + launching (Steam / exe / shortcut)
 │  ├─ steam.ts      Steam Web API, Store metadata, CDN art, local install detection
+│  ├─ sources.ts    IGDB (Twitch auth) and SteamGridDB
+│  ├─ emulators.ts  emulator status and game-folder scanning
 │  ├─ backup.ts     zip backup/restore, CSV export
 │  ├─ samples.ts    removable sample games for the first-run preview
 │  └─ index.ts      window, IPC, Steam import job, lifecycle
 ├─ src/preload/     safe IPC bridge (window.api)
-├─ src/renderer/    React UI (gallery, filters, detail view, editor, settings, Steam import)
+├─ src/renderer/    React UI (gallery, filters, detail view, editor, settings, Steam import, stats)
+│  └─ bigpicture/   Big Picture mode and controller input
 ├─ src/shared/      types + filter/sort logic shared by both sides
 └─ tests/
    ├─ unit/         Vitest: combined filters, sorting, date parsing
-   └─ e2e/run.cjs   Playwright drives the real app against a local mock Steam server
+   ├─ e2e/run.cjs        Playwright drives the real app against a local mock Steam server
+   └─ e2e/features*.cjs  collections, wishlist, play time, IGDB/SteamGridDB (mocked), emulators, Big Picture
 ```
 
 ```powershell
@@ -180,5 +269,13 @@ The end-to-end suite runs these checks against the real app, restarting it twice
 7. A repeat import creates **no duplicates**, refreshes metadata, and keeps notes, ratings, favorites and hand-edited fields.
 8. A local program launches with arguments. A **missing launch file** is explained, Play is hidden, and the path can be removed.
 9. Backup, delete and restore round-trip correctly, including the safety backup. CSV export works.
+
+The feature suite starts by creating a database exactly as version 1.0 did, with a game, notes and a rating. It then checks that the upgrade keeps everything. After that it covers:
+- Collections and multi-select
+- Backlog, Playing and the wishlist
+- Play time and stats
+- IGDB and SteamGridDB lookups, run against a stand-in server
+- Emulator setup, scanning and launching, using a stand-in emulator
+- Big Picture navigation, launching, music and the menu
 
 If you switch between running tests in plain Node and running the app, rebuild the native module for Electron with `npm run rebuild:native`.

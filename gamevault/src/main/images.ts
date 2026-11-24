@@ -37,6 +37,19 @@ export function importImageFile(sourcePath: string): string {
   return name
 }
 
+export const CLIP_EXTENSIONS = ['mp4', 'webm', 'm4v']
+const MAX_CLIP_BYTES = 200 * 1024 * 1024
+
+/** Copies a video clip into the data folder (kept with the game, included in backups). */
+export function importClipFile(sourcePath: string): string {
+  const ext = extname(sourcePath).slice(1).toLowerCase()
+  if (!CLIP_EXTENSIONS.includes(ext)) throw new Error('Use an MP4 or WebM video clip.')
+  if (statSync(sourcePath).size > MAX_CLIP_BYTES) throw new Error('That clip is larger than 200 MB. Trim it to a short highlight (30–90 seconds works best).')
+  const name = `${randomUUID()}.${ext}`
+  copyFileSync(sourcePath, join(imagesDir, name))
+  return name
+}
+
 export function writeImageBuffer(buf: Buffer, ext: string): string {
   const name = `${randomUUID()}.${ext}`
   writeFileSync(join(imagesDir, name), buf)
