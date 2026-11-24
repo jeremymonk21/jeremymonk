@@ -1,34 +1,54 @@
 import { useEffect, useRef, useState } from 'react'
 import type { FilterState, SidebarView, SortKey } from '@shared/filter'
-import type { Game, GameFormat, GameSystem, PlayStatus, Tag } from '@shared/types'
+import type { Collection, Game, GameFormat, GameSystem, PlayStatus, Tag } from '@shared/types'
 import { PLAY_STATUSES, PLAY_STATUS_LABELS } from '@shared/types'
-import { IconChevron, IconGamepad, IconGrid, IconHandheld, IconHeart, IconMonitor, IconPlus, IconSearch, IconSettings, IconSort, IconX } from './Icons'
+import { IconChart, IconChevron, IconGamepad, IconGrid, IconHandheld, IconHeart, IconList, IconMonitor, IconPlay, IconPlus, IconSearch, IconSettings, IconSort, IconStar, IconX } from './Icons'
+
+export type Page = 'library' | 'settings' | 'stats'
 
 export function Sidebar({
   view,
   onView,
+  page,
+  onPage,
   systems,
+  collections,
   games,
   onAdd,
-  onSettings,
-  settingsOpen
+  onNewCollection,
+  onBigPicture
 }: {
   view: SidebarView
   onView: (v: SidebarView) => void
+  page: Page
+  onPage: (p: Page) => void
   systems: GameSystem[]
+  collections: Collection[]
   games: Game[]
   onAdd: () => void
-  onSettings: () => void
-  settingsOpen: boolean
+  onNewCollection: () => void
+  onBigPicture: () => void
 }): JSX.Element {
+  const owned = games.filter((g) => !g.wishlist)
   const counts = new Map<number, number>()
-  for (const g of games) for (const sid of new Set(g.copies.map((c) => c.systemId))) counts.set(sid, (counts.get(sid) ?? 0) + 1)
-  const favCount = games.filter((g) => g.favorite).length
+  for (const g of owned) for (const sid of new Set(g.copies.map((c) => c.systemId))) counts.set(sid, (counts.get(sid) ?? 0) + 1)
+  const colCounts = new Map<number, number>()
+  for (const g of owned) for (const c of g.collectionIds) colCounts.set(c, (colCounts.get(c) ?? 0) + 1)
   const shown = systems.filter((s) => (counts.get(s.id) ?? 0) > 0 || (view.kind === 'system' && view.systemId === s.id))
   const active = (v: SidebarView): boolean =>
-    !settingsOpen && v.kind === view.kind && (v.kind !== 'system' || (view.kind === 'system' && v.systemId === view.systemId))
+    page === 'library' &&
+    v.kind === view.kind &&
+    (v.kind !== 'system' || (view.kind === 'system' && v.systemId === view.systemId)) &&
+    (v.kind !== 'collection' || (view.kind === 'collection' && v.collectionId === view.collectionId))
   const icon = (s: GameSystem): JSX.Element =>
     s.kind === 'pc' ? <IconMonitor size={16} /> : s.kind === 'handheld' ? <IconHandheld size={16} /> : <IconGamepad size={16} />
+  const top: Array<{ v: SidebarView; label: string; count: number; icon: JSX.Element; color: string; id: string }> = [
+    { v: { kind: 'all' }, label: 'All Games', count: owned.length, icon: <IconGrid size={16} />, color: 'var(--accent-2)', id: 'all' },
+    { v: { kind: 'playing' }, label: 'Playing', count: owned.filter((g) => g.playStatus === 'playing').length, icon: <IconPlay size={14} />, color: 'var(--ok)', id: 'playing' },
+    { v: { kind: 'backlog' }, label: 'Backlog', count: owned.filter((g) => g.backlog).length, icon: <IconList size={16} />, color: 'var(--warn)', id: 'backlog' },
+    { v: { kind: 'favorites' }, label: 'Favorites', count: owned.filter((g) => g.favorite).length, icon: <IconHeart size={16} />, color: 'var(--fav)', id: 'favorites' },
+    { v: { kind: 'wishlist' }, label: 'Wishlist', count: games.length - owned.length, icon: <IconStar size={16} />, color: 'var(--accent-2)', id: 'wishlist' }
+  ]
   return (
     <aside className="sidebar">
       <div className="brand">
@@ -41,16 +61,13 @@ export function Sidebar({
         </button>
       </div>
       <nav className="nav" aria-label="Library">
-        <button className={`nav-item ${active({ kind: 'all' }) ? 'active' : ''}`} onClick={() => onView({ kind: 'all' })}>
-          <span className="nav-icon"><IconGrid size={16} /></span>
-          <span className="nav-label">All Games</span>
-          <span className="count">{games.length}</span>
-        </button>
-        <button className={`nav-item ${active({ kind: 'favorites' }) ? 'active' : ''}`} onClick={() => onView({ kind: 'favorites' })} data-testid="nav-favorites">
-          <span className="nav-icon"><IconHeart size={16} /></span>
-          <span className="nav-label">Favorites</span>
-          <span className="count">{favCount}</span>
-        </button>
+        {top.map((t) => (
+          <button key={t.id} className={`nav-item ${active(t.v) ? 'active' : ''}`} onClick={() => onView(t.v)} data-testid={`nav-${t.id}`}>
+            <span className="nav-icon" style={active(t.v) ? { color: t.color } : undefined}>{t.icon}</span>
+            <span className="nav-label">{t.label}</span>
+            <span className="count">{t.count}</span>
+          </button>
+        ))}
         <div className="nav-section">Systems</div>
         {shown.length === 0 && <div className="muted small" style={{ padding: '4px 10px' }}>Systems appear here as you add games.</div>}
         {shown.map((s) => (
@@ -65,15 +82,54 @@ export function Sidebar({
             <span className="count">{counts.get(s.id) ?? 0}</span>
           </button>
         ))}
+        <div className="nav-section">
+          Collections
+          <button className="btn ghost sm icon" style={{ width: 24, height: 24 }} onClick={onNewCollection} aria-label="New collection" title="New collection" data-testid="new-collection">
+            <IconPlus size={13} />
+          </button>
+        </div>
+        {collections.length === 0 && (
+          <button className="nav-item muted small" onClick={onNewCollection}>
+            <span className="nav-icon"><IconPlus size={14} /></span>
+            <span className="nav-label">Make a collection (e.g. Digimon)</span>
+          </button>
+        )}
+        {collections.map((c) => (
+          <button
+            key={c.id}
+            className={`nav-item ${active({ kind: 'collection', collectionId: c.id }) ? 'active' : ''}`}
+            onClick={() => onView({ kind: 'collection', collectionId: c.id })}
+            data-testid={`nav-collection-${c.name}`}
+          >
+            <span className="nav-swatch" style={{ background: swatchFor(c.name) }} />
+            <span className="nav-label">{c.name}</span>
+            <span className="count">{colCounts.get(c.id) ?? 0}</span>
+          </button>
+        ))}
       </nav>
       <div className="sidebar-footer">
-        <button className={`nav-item ${settingsOpen ? 'active' : ''}`} onClick={onSettings} data-testid="nav-settings">
+        <button className={`nav-item ${page === 'stats' ? 'active' : ''}`} onClick={() => onPage('stats')} data-testid="nav-stats">
+          <span className="nav-icon"><IconChart size={16} /></span>
+          <span className="nav-label">Stats</span>
+        </button>
+        <button className={`nav-item ${page === 'settings' ? 'active' : ''}`} onClick={() => onPage('settings')} data-testid="nav-settings">
           <span className="nav-icon"><IconSettings size={16} /></span>
-          <span className="nav-label">Settings & Data</span>
+          <span className="nav-label">Settings &amp; Data</span>
+        </button>
+        <button className="btn block" style={{ marginTop: 6 }} onClick={onBigPicture} title="Big Picture (F11)" data-testid="open-bigpicture">
+          <IconMonitor size={16} /> Big Picture <span className="muted small">F11</span>
         </button>
       </div>
     </aside>
   )
+}
+
+/** Stable colour for a collection's swatch. */
+export function swatchFor(name: string): string {
+  const colors = ['#2d8cf0', '#c94b4b', '#3ccf91', '#ffb648', '#9d90ff', '#ff5d7a', '#2c7a7b', '#e1883c']
+  let h = 0
+  for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0
+  return colors[h % colors.length]
 }
 
 function useClickOutside(ref: React.RefObject<HTMLElement>, onOut: () => void, active: boolean): void {
@@ -154,7 +210,9 @@ const SORT_LABELS: Record<SortKey, string> = {
   title: 'Title',
   rating: 'My rating',
   releaseDate: 'Release date',
-  dateAdded: 'Date added'
+  dateAdded: 'Date added',
+  playTime: 'Play time',
+  lastPlayed: 'Last played'
 }
 
 export function Toolbar({
@@ -163,6 +221,7 @@ export function Toolbar({
   scoped,
   genres,
   categories,
+  collections,
   cardSize,
   setCardSize,
   onManageCategories
@@ -172,6 +231,7 @@ export function Toolbar({
   scoped: Game[]
   genres: Tag[]
   categories: Tag[]
+  collections: Collection[]
   cardSize: number
   setCardSize: (n: number) => void
   onManageCategories: () => void
@@ -180,12 +240,13 @@ export function Toolbar({
   const count = (key: 'genreIds' | 'categoryIds', id: number): number => scoped.filter((g) => g[key].includes(id)).length
   const genreOpts = genres.map((g) => ({ value: g.id, label: g.name, count: count('genreIds', g.id) })).filter((o) => o.count > 0 || f.genreIds.includes(o.value))
   const catOpts = categories.map((c) => ({ value: c.id, label: c.name, count: count('categoryIds', c.id) }))
+  const colOpts = collections.map((c) => ({ value: c.id, label: c.name, count: scoped.filter((g) => g.collectionIds.includes(c.id)).length }))
   const statusOpts = PLAY_STATUSES.map((s) => ({ value: s, label: PLAY_STATUS_LABELS[s], count: scoped.filter((g) => g.playStatus === s).length }))
   const formatOpts: Array<{ value: GameFormat; label: string }> = [
     { value: 'physical', label: 'Physical' },
     { value: 'digital', label: 'Digital' }
   ]
-  const anyFilter = f.genreIds.length || f.categoryIds.length || f.statuses.length || f.formats.length || f.favoritesOnly || f.search
+  const anyFilter = f.genreIds.length || f.categoryIds.length || f.collectionIds.length || f.statuses.length || f.formats.length || f.favoritesOnly || f.search
   return (
     <>
       <div className="filters">
@@ -199,6 +260,9 @@ export function Toolbar({
           testId="filter-category"
           footer={<button className="menu-item" onClick={onManageCategories}><IconPlus size={14} /> Manage categories…</button>}
         />
+        {f.view.kind !== 'collection' && (
+          <MultiSelect label="Collection" options={colOpts} selected={f.collectionIds} onChange={(v) => setF({ collectionIds: v })} emptyText="No collections yet — use + next to Collections in the sidebar." testId="filter-collection" />
+        )}
         <MultiSelect<PlayStatus> label="Status" options={statusOpts} selected={f.statuses} onChange={(v) => setF({ statuses: v })} emptyText="" testId="filter-status" />
         <MultiSelect<GameFormat> label="Format" options={formatOpts} selected={f.formats} onChange={(v) => setF({ formats: v })} emptyText="" testId="filter-format" />
         {f.view.kind !== 'favorites' && (
@@ -207,7 +271,7 @@ export function Toolbar({
           </button>
         )}
         {anyFilter ? (
-          <button className="chip" onClick={() => setF({ genreIds: [], categoryIds: [], statuses: [], formats: [], favoritesOnly: false, search: '' })} data-testid="clear-filters">
+          <button className="chip" onClick={() => setF({ genreIds: [], categoryIds: [], collectionIds: [], statuses: [], formats: [], favoritesOnly: false, search: '' })} data-testid="clear-filters">
             <IconX size={13} /> Clear filters
           </button>
         ) : null}

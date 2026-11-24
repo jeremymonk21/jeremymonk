@@ -39,13 +39,39 @@ function emptyInput(defaultSystemId: number | null): GameInput {
   }
 }
 
-export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: Game | null; defaultSystemId: number | null; onClose: () => void; onSaved: (g: Game) => void }): JSX.Element {
+/** new: add an owned game · edit: edit any game · wishlist: add a wanted game · gotIt: move a wishlist game into the collection. */
+export type EditorMode = 'new' | 'edit' | 'wishlist' | 'gotIt'
+
+export function GameEditor({
+  game,
+  mode = game ? 'edit' : 'new',
+  defaultSystemId,
+  defaultCollectionId = null,
+  onClose,
+  onSaved
+}: {
+  game: Game | null
+  mode?: EditorMode
+  defaultSystemId: number | null
+  defaultCollectionId?: number | null
+  onClose: () => void
+  onSaved: (g: Game) => void
+}): JSX.Element {
   const { lib, genresById, toast, confirm, reload, systemsById } = useApp()
-  const initial = useMemo(
-    () => (game ? gameToInput(game, game.genreIds.map((id) => genresById.get(id)?.name ?? '').filter(Boolean)) : emptyInput(defaultSystemId ?? lib?.systems[0]?.id ?? null)),
+  const initial = useMemo(() => {
+    const firstSystem = defaultSystemId ?? lib?.systems[0]?.id ?? null
+    if (game) {
+      const base = gameToInput(game, game.genreIds.map((id) => genresById.get(id)?.name ?? '').filter(Boolean))
+      if (mode === 'gotIt') {
+        return { ...base, wishlist: false, copies: base.copies.length ? base.copies : emptyInput(firstSystem).copies }
+      }
+      return base
+    }
+    const blank = emptyInput(firstSystem)
+    if (mode === 'wishlist') return { ...blank, wishlist: true, copies: [] }
+    return { ...blank, collectionIds: defaultCollectionId ? [defaultCollectionId] : [] }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    []
-  )
+  }, [])
   const [v, setV] = useState<GameInput>(initial)
   const [saving, setSaving] = useState(false)
   const [genreDraft, setGenreDraft] = useState('')
@@ -169,7 +195,15 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
     const date = commitDate()
     if (date === null) return
     const copies = v.copies.filter((c) => c.systemId)
+    if (mode === 'gotIt' && !copies.length) {
+      toast('Add the system and format you bought it on.', 'error')
+      return
+    }
     for (const c of copies) {
+      if (c.launchType === 'emulator' && (!c.emulatorId || !c.launchTarget.trim())) {
+        toast('A copy is set to launch with an emulator but the emulator or game file is missing.', 'error')
+        return
+      }
       if ((c.launchType === 'executable' || c.launchType === 'shortcut') && !c.launchTarget.trim()) {
         toast('A copy is set to launch a program but no file is selected. Choose a file or set the launch method to "Not launchable".', 'error')
         return
@@ -191,7 +225,7 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
       final.sourceFields = fromLookup
       const g = await window.api.saveGame(final)
       await reload()
-      toast(game ? 'Changes saved.' : `Added "${g.title}".`, 'success')
+      toast(mode === 'gotIt' ? `"${g.title}" is now in your collection.` : g.wishlist && !game ? `Added "${g.title}" to your wishlist.` : game ? 'Changes saved.' : `Added "${g.title}".`, 'success')
       onSaved(g)
     } catch (e) {
       toast((e as Error).message, 'error')
@@ -250,7 +284,12 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
   const genreSuggest = genreDraft ? existingGenres.filter((g) => g.name.toLowerCase().includes(genreDraft.toLowerCase())).slice(0, 8) : existingGenres.slice(0, 12)
 
   return (
-    <Modal title={game ? `Edit ${game.title}` : 'Add a game'} onClose={tryClose} size="wide" closeOnBackdrop={false}>
+    <Modal
+      title={mode === 'gotIt' ? `Add ${game?.title} to your collection` : mode === 'wishlist' ? 'Add to wishlist' : game ? `Edit ${game.title}` : 'Add a game'}
+      onClose={tryClose}
+      size="wide"
+      closeOnBackdrop={false}
+    >
       <div className="modal-body">
         <div className="editor-grid">
           <div>
@@ -291,7 +330,14 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
               )}
             </div>
 
-            <div>
+            {v.wishlist && (
+              <label className="field">
+                Wishlist note <span className="hint">Which version you want, where to look, price to watch for…</span>
+                <textarea className="textarea" rows={3} value={v.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} data-testid="wish-note" />
+              </label>
+            )}
+            {mode === 'gotIt' && <div className="banner small" style={{ margin: 0 }}>Nice! Confirm the system and format you got, then add it to your collection. Your note is kept.</div>}
+            <div style={v.wishlist ? { display: 'none' } : undefined}>
               <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
                 <span className="field" style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-2)' }}>Systems & formats — add one row per copy you own</span>
                 <button type="button" className="btn sm" onClick={addCopy} data-testid="add-copy"><IconPlus size={14} /> Add copy</button>
@@ -397,6 +443,23 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
               </div>
             </div>
 
+            {!v.wishlist && (
+              <div className="field">
+                Collections <span className="hint">A game can be in as many collections as you like.</span>
+                <div className="row wrap" style={{ gap: 6 }}>
+                  {(lib?.collections ?? []).length === 0 && <span className="muted small">No collections yet — make one with + next to Collections in the sidebar.</span>}
+                  {(lib?.collections ?? []).map((c) => {
+                    const on = (v.collectionIds ?? []).includes(c.id)
+                    return (
+                      <button type="button" key={c.id} className={`chip ${on ? 'on' : ''}`} onClick={() => set({ collectionIds: on ? (v.collectionIds ?? []).filter((x) => x !== c.id) : [...(v.collectionIds ?? []), c.id] })} data-testid="editor-collection">
+                        {c.name}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            )}
+
             <label className="field">
               <span className="row" style={{ justifyContent: 'space-between' }}>Description {locked('description')}</span>
               <textarea className="textarea" rows={5} value={v.description} onChange={(e) => set({ description: e.target.value })} data-testid="edit-description" />
@@ -412,13 +475,20 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
                 <input className="input" inputMode="numeric" value={v.steamAppId ?? ''} onChange={(e) => set({ steamAppId: e.target.value.replace(/\D/g, '') ? Number(e.target.value.replace(/\D/g, '')) : null })} placeholder="e.g. 620" />
               </label>
             </div>
-            {!game && (
+            {!game && !v.wishlist && (
               <label className="field">
                 My notes
                 <textarea className="textarea" rows={3} value={v.notes ?? ''} onChange={(e) => set({ notes: e.target.value })} />
               </label>
             )}
-            <label className="check"><input type="checkbox" checked={v.favorite} onChange={(e) => set({ favorite: e.target.checked })} /> Favorite</label>
+            {!v.wishlist && (
+              <div className="row wrap" style={{ gap: 20 }}>
+                <label className="check"><input type="checkbox" checked={v.favorite} onChange={(e) => set({ favorite: e.target.checked })} /> Favorite</label>
+                <label className="check" title={v.playStatus === 'playing' ? 'Games set to Playing come off the backlog' : undefined}>
+                  <input type="checkbox" checked={!!v.backlog && v.playStatus !== 'playing'} disabled={v.playStatus === 'playing'} onChange={(e) => set({ backlog: e.target.checked })} data-testid="editor-backlog" /> In my Backlog
+                </label>
+              </div>
+            )}
 
             <div className="field">
               <span className="row" style={{ justifyContent: 'space-between' }}>
@@ -445,10 +515,17 @@ export function GameEditor({ game, defaultSystemId, onClose, onSaved }: { game: 
         </div>
       </div>
       <div className="modal-foot">
-        <span className="left muted small">Images are copied into GameVault's data folder, so moving the originals won't break anything.</span>
+        {mode === 'new' ? (
+          <label className="check left">
+            <input type="checkbox" checked={!!v.wishlist} onChange={(e) => set({ wishlist: e.target.checked })} data-testid="editor-wishlist" /> Add to Wishlist instead (I don't own it yet)
+          </label>
+        ) : (
+          <span className="left muted small">Images are copied into GameVault's data folder, so moving the originals won't break anything.</span>
+        )}
         <button className="btn" onClick={tryClose}>Cancel</button>
         <button className="btn primary" onClick={save} disabled={saving} data-testid="save-game">
-          {saving && <span className="spinner" />} {game ? 'Save changes' : 'Add game'}
+          {saving && <span className="spinner" />}{' '}
+          {mode === 'gotIt' ? 'Add to collection' : v.wishlist && !game ? 'Add to wishlist' : game ? 'Save changes' : 'Add game'}
         </button>
       </div>
     </Modal>

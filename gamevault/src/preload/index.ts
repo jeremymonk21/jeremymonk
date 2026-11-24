@@ -1,6 +1,9 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import type {
+  AppPrefs,
   BackupResult,
+  Collection,
+  Stats,
   Game,
   GameInput,
   GamePatch,
@@ -33,6 +36,13 @@ const api = {
   saveGame: (input: GameInput) => call<Game>('game:save', input),
   patchGame: (id: number, patch: GamePatch) => call<Game>('game:patch', id, patch),
   deleteGame: (id: number) => call<void>('game:delete', id),
+  patchGames: (ids: number[], patch: GamePatch) => call<Game[]>('games:patchMany', ids, patch),
+  createCollection: (name: string) => call<Collection>('collection:create', name),
+  updateCollection: (id: number, patch: { name?: string; coverFile?: string | null }) => call<void>('collection:update', id, patch),
+  deleteCollection: (id: number) => call<void>('collection:delete', id),
+  setCollectionMembers: (id: number, gameIds: number[], member: boolean) => call<void>('collection:members', id, gameIds, member),
+  stats: (range: 'month' | 'year' | 'all') => call<Stats>('stats:get', range),
+  dailyPlay: (id: number, days: number) => call<number[]>('game:dailyPlay', id, days),
   unlockField: (id: number, field: MetadataField) => call<Game>('game:unlock', id, field),
 
   createSystem: (name: string, kind: SystemKind) => call<GameSystem>('system:create', name, kind),
@@ -49,6 +59,7 @@ const api = {
   importImagePath: (path: string) => call<string>('images:importPath', path),
   pathForFile: (file: File) => webUtils.getPathForFile(file),
   pickLaunchFile: () => call<string | null>('dialog:pickLaunchFile'),
+  pickGameFile: (defaultPath: string) => call<string | null>('dialog:pickGameFile', defaultPath),
   pickFolder: (title: string) => call<string | null>('dialog:pickFolder', title),
 
   checkLaunch: (copyId: number) => call<LaunchCheck>('launch:check', copyId),
@@ -62,7 +73,7 @@ const api = {
   steamSetConfig: (cfg: { apiKey?: string | null; steamId?: string; steamPath?: string | null }) => call<boolean>('steam:setConfig', cfg),
   steamOwned: () => call<SteamOwnedGame[]>('steam:owned'),
   steamInstalledLocal: () => call<SteamOwnedGame[]>('steam:installedLocal'),
-  steamImport: (items: Array<{ appId: number; name: string; installed: boolean }>, opts: SteamImportOptions) => call<boolean>('steam:import', items, opts),
+  steamImport: (items: Array<{ appId: number; name: string; installed: boolean; playtimeMinutes?: number }>, opts: SteamImportOptions) => call<boolean>('steam:import', items, opts),
   steamRefresh: (gameIds: number[], opts: SteamImportOptions) => call<boolean>('steam:refresh', gameIds, opts),
   steamCancel: () => call<void>('steam:cancel'),
   steamUpdateInstalled: () => call<number>('steam:updateInstalled'),
@@ -82,6 +93,16 @@ const api = {
   openExternal: (url: string) => call<void>('app:openExternal', url),
   showInFolder: (path: string) => call<void>('app:showInFolder', path),
   version: () => call<string>('app:version'),
+
+  getPrefs: () => call<AppPrefs>('prefs:get'),
+  setPrefs: (p: Partial<AppPrefs>) => call<AppPrefs>('prefs:set', p),
+  onPlaySession: (fn: (s: { gameId: number; seconds: number }) => void) => {
+    const listener = (_e: unknown, s: { gameId: number; seconds: number }): void => fn(s)
+    ipcRenderer.on('play:session', listener)
+    return (): void => {
+      ipcRenderer.removeListener('play:session', listener)
+    }
+  },
 
   onBeforeClose: (fn: () => Promise<void> | void) => {
     ipcRenderer.on('app:before-close', async () => {

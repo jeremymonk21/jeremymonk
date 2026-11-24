@@ -1,17 +1,20 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CopyInput, Game, GameCopy, LaunchCheck, PlayStatus } from '@shared/types'
 import { PLAY_STATUSES, PLAY_STATUS_LABELS } from '@shared/types'
-import { formatReleaseDate } from '@shared/filter'
+import { formatPlayTime, formatReleaseDate, formatSince } from '@shared/filter'
+import { CollectionMenu } from './Organize'
+import { swatchFor } from './Filters'
 import { imgUrl, Modal, useApp } from '../state'
 import { Cover } from './Cover'
 import { Stars } from './Gallery'
 import { gameToInput, LaunchFields } from './LaunchFields'
-import { IconBack, IconCloud, IconDisc, IconEdit, IconHeart, IconPlay, IconPlus, IconRefresh, IconSteam, IconTrash } from './Icons'
+import { IconBack, IconCloud, IconDisc, IconEdit, IconHeart, IconPlay, IconPlus, IconRefresh, IconSteam, IconTrash, IconX } from './Icons'
 
 type NotesState = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
 
-export function DetailView({ game, onClose, onEdit }: { game: Game; onClose: () => void; onEdit: () => void }): JSX.Element {
-  const { putGame, dropGame, toast, confirm, systemsById, genresById, categoriesById, lib, registerFlush, reload } = useApp()
+export function DetailView({ game, onClose, onEdit, onGotIt }: { game: Game; onClose: () => void; onEdit: () => void; onGotIt?: () => void }): JSX.Element {
+  const { putGame, dropGame, toast, confirm, systemsById, genresById, categoriesById, collectionsById, lib, registerFlush, reload } = useApp()
+  const [colMenu, setColMenu] = useState(false)
   const [checks, setChecks] = useState<Record<number, LaunchCheck>>({})
   const [launching, setLaunching] = useState<number | null>(null)
   const [launchEdit, setLaunchEdit] = useState<CopyInput | null>(null)
@@ -227,6 +230,20 @@ export function DetailView({ game, onClose, onEdit }: { game: Game; onClose: () 
               <button className={`btn lg ${game.favorite ? 'toggled' : ''}`} onClick={() => patch({ favorite: !game.favorite })} aria-pressed={game.favorite} data-testid="detail-fav">
                 <IconHeart size={18} filled={game.favorite} color={game.favorite ? 'var(--fav)' : undefined} /> {game.favorite ? 'Favorite' : 'Add to favorites'}
               </button>
+              {game.wishlist ? (
+                onGotIt && <button className="btn play lg" onClick={onGotIt} data-testid="detail-got-it">I got it!</button>
+              ) : (
+                <button
+                  className={`btn lg ${game.backlog ? 'toggled-warn' : ''}`}
+                  onClick={() => patch({ backlog: !game.backlog })}
+                  aria-pressed={game.backlog}
+                  disabled={game.playStatus === 'playing' && !game.backlog}
+                  title={game.playStatus === 'playing' ? 'Games you are playing are not in the backlog' : undefined}
+                  data-testid="detail-backlog"
+                >
+                  {game.backlog ? '✓ In Backlog' : '+ Backlog'}
+                </button>
+              )}
               <span className="spacer" />
               <div className="row" style={{ gap: 8 }}>
                 <span className="muted small">My rating</span>
@@ -246,9 +263,16 @@ export function DetailView({ game, onClose, onEdit }: { game: Game; onClose: () 
               </div>
             </div>
 
+            {game.wishlist && (
+              <div className="banner" style={{ marginTop: 16 }}>
+                <span className="grow">This game is on your <b>wishlist</b>. It isn't counted in your collection until you mark it as owned.</span>
+              </div>
+            )}
+            {!game.wishlist && <PlayTime game={game} />}
+
             <div className="section">
               <h3>
-                <span>My notes</span>
+                <span>{game.wishlist ? 'Wishlist note' : 'My notes'}</span>
                 <span className={`notes-status ${notesState === 'saved' ? 'saved' : notesState === 'error' ? 'error' : ''}`} data-testid="notes-status">
                   {notesState === 'saving' ? 'Saving…' : notesState === 'saved' ? 'Saved' : notesState === 'dirty' ? 'Unsaved changes…' : notesState === 'error' ? (
                     <>Not saved — <button className="btn sm" onClick={() => flushNotes().catch(() => undefined)}>Retry</button></>
@@ -265,6 +289,43 @@ export function DetailView({ game, onClose, onEdit }: { game: Game; onClose: () 
                 data-testid="notes"
               />
             </div>
+
+            {!game.wishlist && (
+              <div className="section">
+                <h3>Collections</h3>
+                <div className="row wrap" style={{ gap: 8 }}>
+                  {game.collectionIds.map((id) => {
+                    const c = collectionsById.get(id)
+                    return c ? (
+                      <span key={id} className="tag cat" style={{ height: 28, fontSize: 13 }} data-testid="detail-collection-tag">
+                        <span className="nav-swatch" style={{ width: 10, height: 10, borderRadius: 3, background: swatchFor(c.name) }} />
+                        {c.name}
+                        <button aria-label={`Remove from ${c.name}`} title={`Remove from ${c.name}`} onClick={() => patch({ collectionIds: game.collectionIds.filter((x) => x !== id) })}><IconX size={12} /></button>
+                      </span>
+                    ) : null
+                  })}
+                  <div className="dropdown">
+                    <button className="chip" style={{ borderStyle: 'dashed' }} onClick={() => setColMenu((m) => !m)} data-testid="detail-add-collection"><IconPlus size={13} /> Add to collection</button>
+                    {colMenu && (
+                      <CollectionMenu
+                        checked={game.collectionIds}
+                        onClose={() => setColMenu(false)}
+                        onToggle={(c, on) => patch({ collectionIds: on ? [...game.collectionIds, c.id] : game.collectionIds.filter((x) => x !== c.id) })}
+                        onCreate={async (name) => {
+                          try {
+                            const c = await window.api.createCollection(name)
+                            await window.api.setCollectionMembers(c.id, [game.id], true)
+                            await reload()
+                          } catch (e) {
+                            toast((e as Error).message, 'error')
+                          }
+                        }}
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
 
             <div className="section">
               <h3>Custom categories</h3>
@@ -322,6 +383,7 @@ export function DetailView({ game, onClose, onEdit }: { game: Game; onClose: () 
                       <div className="sub">
                         {c.launchType === 'none' && (c.store === 'Steam' ? 'Owned on Steam — launching not set up on this PC.' : 'Owned — collection entry.')}
                         {c.launchType === 'steam' && `Launches via Steam (App ID ${c.steamAppId ?? '?'})`}
+                        {c.launchType === 'emulator' && `${lib?.emulators.find((e) => e.id === c.emulatorId)?.name ?? 'Emulator'} · ${c.launchTarget}`}
                         {(c.launchType === 'executable' || c.launchType === 'shortcut') && `${c.launchTarget}${c.launchArgs ? `  ${c.launchArgs}` : ''}`}
                       </div>
                       {chk && chk.state !== 'ready' && <div className="sub err-text" data-testid="launch-problem">{chk.message}</div>}
@@ -409,5 +471,43 @@ function LaunchDialog({ copy, isPc, onClose, onSave }: { copy: CopyInput; isPc: 
         <button className="btn primary" disabled={invalid || steamInvalid} onClick={() => onSave(c)} data-testid="save-launch">Save</button>
       </div>
     </Modal>
+  )
+}
+
+/** Play time panel: totals plus a 14-day chart of tracked sessions. */
+function PlayTime({ game }: { game: Game }): JSX.Element {
+  const [days, setDays] = useState<number[] | null>(null)
+  useEffect(() => {
+    let alive = true
+    window.api.dailyPlay(game.id, 14).then((d) => alive && setDays(d)).catch(() => alive && setDays([]))
+    return () => {
+      alive = false
+    }
+  }, [game.id, game.playSeconds])
+  const max = Math.max(1, ...(days ?? [0]))
+  const total = formatPlayTime(game.playSeconds)
+  return (
+    <div className="section" data-testid="playtime">
+      <h3>Play time</h3>
+      <div className="playtime-grid">
+        <div><div className="big-num" data-testid="playtime-total">{total || '0m'}</div><div className="muted small">Total</div></div>
+        <div><div className="big-num">{game.sessionCount}</div><div className="muted small">Sessions</div></div>
+        <div><div className="big-num">{game.lastPlayedAt ? formatSince(game.lastPlayedAt) : '—'}</div><div className="muted small">Last played</div></div>
+      </div>
+      {days && days.some((d) => d > 0) ? (
+        <>
+          <div className="playtime-bars" role="img" aria-label="Minutes played each of the last 14 days">
+            {days.map((d, i) => (
+              <div key={i} title={formatPlayTime(d) || 'not played'} style={{ height: `${Math.max(4, Math.round((d / max) * 46))}px`, opacity: d ? 1 : 0.25 }} />
+            ))}
+          </div>
+          <div className="muted small" style={{ marginTop: 6 }}>Last 14 days</div>
+        </>
+      ) : (
+        <p className="muted small" style={{ margin: '10px 0 0' }}>
+          Time is tracked automatically when you press Play in GameVault.{game.steamAppId ? ' Hours from your Steam import are included in the total.' : ''}
+        </p>
+      )}
+    </div>
   )
 }

@@ -47,3 +47,11 @@ export const IconRefresh = (p: P): JSX.Element => base(p.size, p, <><path d="M20
 export const IconLink = (p: P): JSX.Element => base(p.size, p, <><path d="M10 14a4 4 0 0 0 5.66 0l3-3a4 4 0 0 0-5.66-5.66l-1 1" /><path d="M14 10a4 4 0 0 0-5.66 0l-3 3a4 4 0 0 0 5.66 5.66l1-1" /></>)
 export const IconLock = (p: P): JSX.Element => base(p.size, p, <><rect x="5" y="11" width="14" height="10" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>)
 export const IconFilter = (p: P): JSX.Element => base(p.size, p, <path d="M4 5h16l-6 8v5l-4 2v-7z" />)
+export const IconList = (p: P): JSX.Element => base(p.size, p, <path d="M4 6h16M4 12h16M4 18h10" />)
+export const IconChart = (p: P): JSX.Element => base(p.size, p, <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />)
+export const IconDice = (p: P): JSX.Element =>
+  base(p.size, p, <><rect x="3" y="3" width="18" height="18" rx="4" /><circle cx="8.5" cy="8.5" r="1.2" fill="currentColor" /><circle cx="15.5" cy="15.5" r="1.2" fill="currentColor" /><circle cx="12" cy="12" r="1.2" fill="currentColor" /></>)
+export const IconCheckSquare = (p: P): JSX.Element => base(p.size, p, <><rect x="3" y="3" width="18" height="18" rx="4" /><path d="M8 12.5l3 3 5-6" /></>)
+export const IconClock = (p: P): JSX.Element => base(p.size, p, <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>)
+export const IconFilm = (p: P): JSX.Element => base(p.size, p, <><rect x="3" y="4" width="18" height="16" rx="2" /><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4" /></>)
+export const IconMusic = (p: P): JSX.Element => base(p.size, p, <><path d="M9 18V5l12-2v13" /><circle cx="6" cy="18" r="3" /><circle cx="18" cy="16" r="3" /></>)

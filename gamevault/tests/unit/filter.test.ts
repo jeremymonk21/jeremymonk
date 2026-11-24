@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { applyFilters, DEFAULT_FILTERS, filterGames, parseLooseDate, sortGames, type FilterState } from '@shared/filter'
+import { applyFilters, DEFAULT_FILTERS, filterGames, formatPlayTime, parseLooseDate, pickRandom, sortGames, type FilterState } from '@shared/filter'
 import type { Game } from '@shared/types'
 
 let nextId = 1
@@ -9,9 +9,10 @@ function game(p: Partial<Game> & { systems?: Array<[number, 'physical' | 'digita
     id, title: 'Untitled', description: '', developer: '', publisher: '', releaseDate: '', coverFile: null, coverFit: 'cover',
     coverPosX: 50, coverPosY: 50, coverZoom: 1, rating: null, notes: '', playStatus: 'not_started', favorite: false,
     dateAdded: `2024-01-${String(id).padStart(2, '0')}T00:00:00Z`, updatedAt: '', steamAppId: null, source: 'manual', lockedFields: [],
-    isSample: false, genreIds: [], categoryIds: [], images: [],
+    isSample: false, genreIds: [], categoryIds: [], images: [], collectionIds: [], backlog: false, wishlist: false,
+    heroFile: null, logoFile: null, igdbId: null, videoIds: [], clipFile: null, playSeconds: 0, sessionCount: 0, lastPlayedAt: null,
     copies: (p.systems ?? [[1, 'digital']]).map(([systemId, format], i) => ({
-      id: id * 10 + i, gameId: id, systemId, format, store: '', steamAppId: null, launchType: 'none', launchTarget: '', launchArgs: '', launchWorkDir: ''
+      id: id * 10 + i, gameId: id, systemId, format, store: '', steamAppId: null, launchType: 'none', launchTarget: '', launchArgs: '', launchWorkDir: '', emulatorId: null
     })),
     ...p
   } as Game
@@ -85,4 +86,44 @@ describe('parseLooseDate', () => {
     ['Coming soon', ''],
     ['', '']
   ])('%s -> %s', (input, out) => expect(parseLooseDate(input)).toBe(out))
+})
+
+describe('new library views', () => {
+  const DIGI = 30
+  const lib = [
+    game({ title: 'Digimon World', collectionIds: [DIGI], backlog: true, systems: [[PS5, 'physical']] }),
+    game({ title: 'Digimon Survive', collectionIds: [DIGI], playStatus: 'playing', systems: [[SWITCH, 'digital']] }),
+    game({ title: 'Chrono Cross', wishlist: true, collectionIds: [], systems: [] }),
+    game({ title: 'Hades', playStatus: 'playing', favorite: true, playSeconds: 7200, lastPlayedAt: '2026-11-20T10:00:00Z' })
+  ]
+  it('playing shows only games set to Playing', () => {
+    expect(titles(filterGames(lib, F({ view: { kind: 'playing' } })))).toEqual(['Digimon Survive', 'Hades'])
+  })
+  it('backlog shows only games marked backlog', () => {
+    expect(titles(filterGames(lib, F({ view: { kind: 'backlog' } })))).toEqual(['Digimon World'])
+  })
+  it('collections span systems and combine with filters', () => {
+    expect(titles(filterGames(lib, F({ view: { kind: 'collection', collectionId: DIGI } })))).toEqual(['Digimon World', 'Digimon Survive'])
+    expect(titles(filterGames(lib, F({ view: { kind: 'collection', collectionId: DIGI }, statuses: ['playing'] })))).toEqual(['Digimon Survive'])
+    expect(titles(filterGames(lib, F({ collectionIds: [DIGI], formats: ['physical'] })))).toEqual(['Digimon World'])
+  })
+  it('wishlist games are kept out of every other view', () => {
+    expect(titles(filterGames(lib, F({ view: { kind: 'wishlist' } })))).toEqual(['Chrono Cross'])
+    expect(titles(filterGames(lib, F({})))).not.toContain('Chrono Cross')
+    expect(titles(filterGames(lib, F({ search: 'chrono' })))).toEqual([])
+  })
+  it('sorts by play time and last played', () => {
+    expect(titles(sortGames(lib, 'playTime', 'desc'))[0]).toBe('Hades')
+    expect(titles(sortGames(lib, 'lastPlayed', 'desc'))[0]).toBe('Hades')
+  })
+  it('formats play time', () => {
+    expect(formatPlayTime(0)).toBe('')
+    expect(formatPlayTime(35 * 60)).toBe('35m')
+    expect(formatPlayTime(41 * 3600 + 20 * 60)).toBe('41h 20m')
+  })
+  it('surprise me avoids repeating the same pick', () => {
+    const pick = pickRandom(lib, lib[0].id, () => 0)
+    expect(pick?.id).not.toBe(lib[0].id)
+    expect(pickRandom([], null)).toBeNull()
+  })
 })

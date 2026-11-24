@@ -1,8 +1,15 @@
 import type { Game, GameFormat, PlayStatus } from './types'
 
-export type SidebarView = { kind: 'all' } | { kind: 'favorites' } | { kind: 'system'; systemId: number }
+export type SidebarView =
+  | { kind: 'all' }
+  | { kind: 'playing' }
+  | { kind: 'backlog' }
+  | { kind: 'favorites' }
+  | { kind: 'wishlist' }
+  | { kind: 'system'; systemId: number }
+  | { kind: 'collection'; collectionId: number }
 
-export type SortKey = 'title' | 'rating' | 'releaseDate' | 'dateAdded'
+export type SortKey = 'title' | 'rating' | 'releaseDate' | 'dateAdded' | 'playTime' | 'lastPlayed'
 export type SortDir = 'asc' | 'desc'
 
 export interface FilterState {
@@ -12,6 +19,8 @@ export interface FilterState {
   genreIds: number[]
   /** Match games having ANY of the selected categories. */
   categoryIds: number[]
+  /** Match games in ANY of the selected collections. */
+  collectionIds: number[]
   statuses: PlayStatus[]
   formats: GameFormat[]
   favoritesOnly: boolean
@@ -24,6 +33,7 @@ export const DEFAULT_FILTERS: FilterState = {
   search: '',
   genreIds: [],
   categoryIds: [],
+  collectionIds: [],
   statuses: [],
   formats: [],
   favoritesOnly: false,
@@ -42,9 +52,23 @@ export function normalize(text: string): string {
 
 /** Games in scope of the sidebar view (before toolbar filters). */
 export function inView(game: Game, view: SidebarView): boolean {
-  if (view.kind === 'favorites') return game.favorite
-  if (view.kind === 'system') return game.copies.some((c) => c.systemId === view.systemId)
-  return true
+  // The wishlist is kept apart from the owned collection.
+  if (view.kind === 'wishlist') return game.wishlist
+  if (game.wishlist) return false
+  switch (view.kind) {
+    case 'playing':
+      return game.playStatus === 'playing'
+    case 'backlog':
+      return game.backlog
+    case 'favorites':
+      return game.favorite
+    case 'system':
+      return game.copies.some((c) => c.systemId === view.systemId)
+    case 'collection':
+      return game.collectionIds.includes(view.collectionId)
+    default:
+      return true
+  }
 }
 
 /**
@@ -63,6 +87,7 @@ export function filterGames(games: Game[], f: FilterState): Game[] {
     }
     if (f.genreIds.length && !f.genreIds.some((id) => g.genreIds.includes(id))) return false
     if (f.categoryIds.length && !f.categoryIds.some((id) => g.categoryIds.includes(id))) return false
+    if (f.collectionIds.length && !f.collectionIds.some((id) => g.collectionIds.includes(id))) return false
     if (f.statuses.length && !f.statuses.includes(g.playStatus)) return false
     if (f.formats.length) {
       const relevant =
@@ -108,6 +133,13 @@ export function sortGames(games: Game[], key: SortKey, dir: SortDir): Game[] {
       else if (ka == null) return 1
       else if (kb == null) return -1
       else r = (ka < kb ? -1 : ka > kb ? 1 : 0) * mult
+    } else if (key === 'playTime') {
+      r = (a.playSeconds - b.playSeconds) * mult
+    } else if (key === 'lastPlayed') {
+      if (!a.lastPlayedAt && !b.lastPlayedAt) r = 0
+      else if (!a.lastPlayedAt) return 1
+      else if (!b.lastPlayedAt) return -1
+      else r = (a.lastPlayedAt < b.lastPlayedAt ? -1 : a.lastPlayedAt > b.lastPlayedAt ? 1 : 0) * mult
     } else if (key === 'dateAdded') {
       r = (a.dateAdded < b.dateAdded ? -1 : a.dateAdded > b.dateAdded ? 1 : a.id - b.id) * mult
     }
@@ -166,4 +198,31 @@ export function parseLooseDate(input: string): string {
     .map((w) => /^\d{1,2}$/.test(w) ? Number(w) : NaN)
     .find((n) => n >= 1 && n <= 31)
   return day ? `${year}-${pad(month)}-${pad(day)}` : `${year}-${pad(month)}`
+}
+
+/** "41h 20m", "35m", or "" when never played. */
+export function formatPlayTime(seconds: number): string {
+  if (!seconds || seconds < 60) return ''
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (!h) return `${m}m`
+  return m ? `${h}h ${m}m` : `${h}h`
+}
+
+/** "today", "yesterday", "3 days ago", "Mar 4". */
+export function formatSince(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  const days = Math.floor((Date.now() - d.getTime()) / 86400000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 30) return `${days} days ago`
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: days > 300 ? 'numeric' : undefined })
+}
+
+/** Picks a random game (Surprise me), avoiding `avoidId` when there is another choice. */
+export function pickRandom(games: Game[], avoidId?: number | null, rnd: () => number = Math.random): Game | null {
+  if (!games.length) return null
+  const pool = games.length > 1 && avoidId != null ? games.filter((g) => g.id !== avoidId) : games
+  return pool[Math.floor(rnd() * pool.length)] ?? null
 }

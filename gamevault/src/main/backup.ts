@@ -3,7 +3,7 @@ import Database from 'better-sqlite3'
 import { existsSync, mkdirSync, readdirSync, renameSync, rmSync, writeFileSync } from 'fs'
 import { join } from 'path'
 import type { DB } from './db'
-import { listGames, listSystems, listTags } from './db'
+import { listCollections, listGames, listSystems, listTags } from './db'
 import { PLAY_STATUS_LABELS } from '@shared/types'
 
 const MANIFEST_APP = 'GameVault'
@@ -146,9 +146,11 @@ export function buildCsv(db: DB): string {
   const systems = new Map(listSystems(db).map((s) => [s.id, s.name]))
   const genres = new Map(listTags(db, 'genres').map((t) => [t.id, t.name]))
   const cats = new Map(listTags(db, 'categories').map((t) => [t.id, t.name]))
+  const cols = new Map(listCollections(db).map((c) => [c.id, c.name]))
   const header = [
     'Title', 'Systems', 'Formats', 'Stores', 'Genres', 'Categories', 'Play Status', 'Rating', 'Favorite',
-    'Release Date', 'Developer', 'Publisher', 'Date Added', 'Steam App ID', 'Notes'
+    'Release Date', 'Developer', 'Publisher', 'Date Added', 'Steam App ID', 'Notes',
+    'Collections', 'Backlog', 'Wishlist', 'Hours Played', 'Last Played'
   ]
   const rows = listGames(db, 'ORDER BY title COLLATE NOCASE').map((g) => {
     const uniq = (xs: string[]): string => [...new Set(xs.filter(Boolean))].join('; ')
@@ -167,7 +169,12 @@ export function buildCsv(db: DB): string {
       g.publisher,
       g.dateAdded.slice(0, 10),
       g.steamAppId ?? '',
-      g.notes
+      g.notes,
+      uniq(g.collectionIds.map((id) => cols.get(id) ?? '')),
+      g.backlog ? 'Yes' : 'No',
+      g.wishlist ? 'Yes' : 'No',
+      g.playSeconds ? Math.round(g.playSeconds / 360) / 10 : '',
+      g.lastPlayedAt ? g.lastPlayedAt.slice(0, 10) : ''
     ]
   })
   // Leading BOM so Excel detects UTF-8.

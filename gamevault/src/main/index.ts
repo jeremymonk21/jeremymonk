@@ -5,11 +5,14 @@ import { pathToFileURL } from 'url'
 import * as db from './db'
 import { cleanupImages, downloadImage, importImageFile, initImages, resolveImage, IMAGE_EXTENSIONS } from './images'
 import { artworkUrls, detectSteamPath, getOwnedGames, getStoreDetails, installedSteamApps, resolveSteamId, searchStore, SteamError } from './steam'
-import { checkCopy, launchCopy, openSteamInstall } from './launcher'
+import { checkCopy, launchCopy, openSteamInstall, type LaunchContext } from './launcher'
 import { buildCsv, createBackup, stageRestore, swapInStaged } from './backup'
 import { removeSampleTags, seedSamplesIfFirstRun } from './samples'
 import { getSecret, initSecrets, setSecret } from './secrets'
+import { DEFAULT_PREFS } from '@shared/types'
 import type {
+  AppPrefs,
+  GameCopy,
   GameInput,
   GamePatch,
   ImportProgress,
@@ -41,8 +44,18 @@ function library(): Library {
     systems: db.listSystems(database),
     genres: db.listTags(database, 'genres'),
     categories: db.listTags(database, 'categories'),
+    collections: db.listCollections(database),
+    emulators: db.listEmulators(database),
     dataDir: DATA_DIR,
     hasSamples: db.hasSamples(database)
+  }
+}
+
+function getPrefs(): AppPrefs {
+  try {
+    return { ...DEFAULT_PREFS, ...JSON.parse(db.getSetting(database, 'prefs') || '{}') }
+  } catch {
+    return { ...DEFAULT_PREFS }
   }
 }
 
@@ -123,6 +136,19 @@ function registerIpc(): void {
   })
   handle('game:patch', (id: number, patch: GamePatch) => db.patchGame(database, id, patch))
   handle('game:delete', (id: number) => db.deleteGame(database, id))
+  handle('prefs:get', () => getPrefs())
+  handle('prefs:set', (p: Partial<AppPrefs>) => {
+    const next = { ...getPrefs(), ...p }
+    db.setSetting(database, 'prefs', JSON.stringify(next))
+    return next
+  })
+  handle('games:patchMany', (ids: number[], patch: GamePatch) => db.patchGames(database, ids, patch))
+  handle('collection:create', (name: string) => db.createCollection(database, name))
+  handle('collection:update', (id: number, patch: { name?: string; coverFile?: string | null }) => db.updateCollection(database, id, patch))
+  handle('collection:delete', (id: number) => db.deleteCollection(database, id))
+  handle('collection:members', (id: number, gameIds: number[], member: boolean) => db.setCollectionMembership(database, id, gameIds, member))
+  handle('stats:get', (range: 'month' | 'year' | 'all') => db.computeStats(database, range))
+  handle('game:dailyPlay', (id: number, days: number) => db.dailyPlay(database, id, days))
   handle('game:unlock', (id: number, field: MetadataField) => db.unlockField(database, id, field))
 
   handle('system:create', (name: string, kind: SystemKind) => db.createSystem(database, name, kind))
@@ -162,6 +188,10 @@ function registerIpc(): void {
     })
     return r.canceled ? null : r.filePaths[0]
   })
+  handle('dialog:pickGameFile', async (defaultPath: string) => {
+    const r = await dialog.showOpenDialog(win!, { title: 'Choose the game file', defaultPath: defaultPath || undefined, properties: ['openFile'] })
+    return r.canceled ? null : r.filePaths[0]
+  })
   handle('dialog:pickFolder', async (title: string) => {
     const r = await dialog.showOpenDialog(win!, { title, properties: ['openDirectory'] })
     return r.canceled ? null : r.filePaths[0]
@@ -169,9 +199,15 @@ function registerIpc(): void {
 
   handle('launch:check', async (copyId: number) => {
     const copy = findCopy(copyId)
-    return checkCopy(copy, steamPathOverride())
+    return checkCopy(copy, launchContext(copy))
   })
-  handle('launch:run', async (copyId: number) => launchCopy(findCopy(copyId), steamPathOverride()))
+  handle('launch:run', async (copyId: number) => {
+    const copy = findCopy(copyId)
+    return launchCopy(copy, {
+      ...launchContext(copy),
+      onExit: (startedAt) => recordSession(copy.gameId, startedAt)
+    })
+  })
   handle('launch:steamInstall', (appId: number) => openSteamInstall(appId))
 
   // ---- Steam ----
@@ -220,7 +256,7 @@ function registerIpc(): void {
       .map((a) => ({ appId: a.appId, name: a.name || `Steam app ${a.appId}`, playtimeMinutes: 0, installed: true, existingGameId: db.getGameBySteamId(database, a.appId)?.id ?? null }))
       .sort((a, b) => a.name.localeCompare(b.name))
   })
-  handle('steam:import', (items: Array<{ appId: number; name: string; installed: boolean }>, opts: SteamImportOptions) => {
+  handle('steam:import', (items: Array<{ appId: number; name: string; installed: boolean; playtimeMinutes?: number }>, opts: SteamImportOptions) => {
     if (importRunning) throw new Error('An import is already running.')
     runImport(items, opts, false)
     return true
@@ -319,6 +355,27 @@ function checkTable(t: string): 'genres' | 'categories' {
   return t
 }
 
+function launchContext(copy: GameCopy): LaunchContext {
+  return {
+    steamPathOverride: steamPathOverride(),
+    emulator: copy.launchType === 'emulator' && copy.emulatorId ? db.getEmulator(database, copy.emulatorId) : null
+  }
+}
+
+/** Sessions shorter than this are ignored (e.g. a launcher that just opens another program). */
+const MIN_SESSION_SECONDS = Number(process.env.GAMEVAULT_MIN_SESSION_SECONDS ?? 15)
+
+function recordSession(gameId: number, startedAt: number): void {
+  const seconds = Math.round((Date.now() - startedAt) / 1000)
+  if (seconds < MIN_SESSION_SECONDS) return
+  try {
+    db.addPlaySession(database, gameId, new Date(startedAt).toISOString(), seconds)
+    win?.webContents.send('play:session', { gameId, seconds })
+  } catch {
+    /* the game may have been deleted meanwhile */
+  }
+}
+
 function findCopy(copyId: number) {
   const row = database.prepare('SELECT game_id FROM copies WHERE id = ?').get(copyId) as { game_id: number } | undefined
   const copy = row ? db.getGame(database, row.game_id)?.copies.find((c) => c.id === copyId) : undefined
@@ -361,7 +418,7 @@ async function fetchCover(appId: number, headerImage?: string): Promise<{ file: 
   return null
 }
 
-async function runImport(items: Array<{ appId: number; name: string; installed: boolean }>, opts: SteamImportOptions, refresh: boolean): Promise<void> {
+async function runImport(items: Array<{ appId: number; name: string; installed: boolean; playtimeMinutes?: number }>, opts: SteamImportOptions, refresh: boolean): Promise<void> {
   importRunning = true
   importCancelled = false
   const p: ImportProgress = { done: 0, total: items.length, current: '', phase: 'importing', added: 0, updated: 0, errors: [] }
@@ -380,6 +437,7 @@ async function runImport(items: Array<{ appId: number; name: string; installed: 
           game = db.insertSteamGame(database, item.appId, item.name, item.installed)
           p.added++
         }
+        if (item.playtimeMinutes) db.setImportedPlayMinutes(database, game.id, item.playtimeMinutes)
         let headerImage: string | undefined
         if (opts.fetchMetadata) {
           let details = null

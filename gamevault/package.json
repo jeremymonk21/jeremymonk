@@ -16,7 +16,7 @@
     "postinstall": "electron-builder install-app-deps",
     "dist": "electron-vite build && electron-builder --win --x64",
     "dist:dir": "electron-vite build && electron-builder --win --x64 --dir",
-    "test:e2e": "node tests/e2e/run.cjs",
+    "test:e2e": "node tests/e2e/run.cjs && node tests/e2e/features.cjs",
     "rebuild:native": "electron-builder install-app-deps"
   },
   "dependencies": {

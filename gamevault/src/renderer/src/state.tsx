@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
-import type { Game, GameSystem, Library, Tag } from '@shared/types'
+import type { Collection, Game, GameSystem, Library, Tag } from '@shared/types'
 import { IconAlert, IconCheck, IconInfo, IconX } from './components/Icons'
 
 export type ToastKind = 'info' | 'success' | 'error'
@@ -17,6 +17,15 @@ export interface ConfirmOptions {
   danger?: boolean
 }
 
+export interface PromptOptions {
+  title: string
+  label: string
+  initial?: string
+  confirmLabel?: string
+  multiline?: boolean
+  placeholder?: string
+}
+
 interface Ctx {
   lib: Library | null
   loadError: string | null
@@ -28,6 +37,9 @@ interface Ctx {
   categoriesById: Map<number, Tag>
   toast: (text: string, kind?: ToastKind, action?: Toast['action']) => void
   confirm: (o: ConfirmOptions) => Promise<boolean>
+  /** Asks for a line (or block) of text; resolves null when cancelled. */
+  prompt: (o: PromptOptions) => Promise<string | null>
+  collectionsById: Map<number, Collection>
   /** Registers a flush callback run before the window closes (e.g. unsaved notes). */
   registerFlush: (fn: () => Promise<void>) => () => void
 }
@@ -45,6 +57,7 @@ export function AppProvider({ children }: { children: React.ReactNode }): JSX.El
   const [loadError, setLoadError] = useState<string | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [confirmState, setConfirmState] = useState<(ConfirmOptions & { resolve: (v: boolean) => void }) | null>(null)
+  const [promptState, setPromptState] = useState<(PromptOptions & { resolve: (v: string | null) => void; value: string }) | null>(null)
   const flushers = useRef(new Set<() => Promise<void>>())
 
   const reload = useCallback(async () => {
@@ -77,11 +90,12 @@ export function AppProvider({ children }: { children: React.ReactNode }): JSX.El
 
   const toast = useCallback((text: string, kind: ToastKind = 'info', action?: Toast['action']) => {
     const id = Date.now() + Math.random()
-    setToasts((t) => [...t.slice(-3), { id, kind, text, action }])
+    setToasts((t) => [...t.slice(-2), { id, kind, text, action }])
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), kind === 'error' ? 8000 : 4000)
   }, [])
 
   const confirm = useCallback((o: ConfirmOptions) => new Promise<boolean>((resolve) => setConfirmState({ ...o, resolve })), [])
+  const prompt = useCallback((o: PromptOptions) => new Promise<string | null>((resolve) => setPromptState({ ...o, resolve, value: o.initial ?? '' })), [])
   const registerFlush = useCallback((fn: () => Promise<void>) => {
     flushers.current.add(fn)
     return () => {
@@ -99,11 +113,13 @@ export function AppProvider({ children }: { children: React.ReactNode }): JSX.El
       systemsById: new Map((lib?.systems ?? []).map((s) => [s.id, s])),
       genresById: new Map((lib?.genres ?? []).map((s) => [s.id, s])),
       categoriesById: new Map((lib?.categories ?? []).map((s) => [s.id, s])),
+      collectionsById: new Map((lib?.collections ?? []).map((c) => [c.id, c])),
       toast,
       confirm,
+      prompt,
       registerFlush
     }),
-    [lib, loadError, reload, putGame, dropGame, toast, confirm, registerFlush]
+    [lib, loadError, reload, putGame, dropGame, toast, confirm, prompt, registerFlush]
   )
 
   const closeConfirm = (v: boolean): void => {
@@ -130,6 +146,26 @@ export function AppProvider({ children }: { children: React.ReactNode }): JSX.El
           </div>
         ))}
       </div>
+      {promptState && (
+        <Modal title={promptState.title} onClose={() => { promptState.resolve(null); setPromptState(null) }} size="sm">
+          <form onSubmit={(e) => { e.preventDefault(); promptState.resolve(promptState.value); setPromptState(null) }}>
+            <div className="modal-body">
+              <label className="field">
+                {promptState.label}
+                {promptState.multiline ? (
+                  <textarea className="textarea" autoFocus rows={4} value={promptState.value} placeholder={promptState.placeholder} onChange={(e) => setPromptState({ ...promptState, value: e.target.value })} data-testid="prompt-input" />
+                ) : (
+                  <input className="input" autoFocus value={promptState.value} placeholder={promptState.placeholder} onChange={(e) => setPromptState({ ...promptState, value: e.target.value })} data-testid="prompt-input" />
+                )}
+              </label>
+            </div>
+            <div className="modal-foot">
+              <button type="button" className="btn" onClick={() => { promptState.resolve(null); setPromptState(null) }}>Cancel</button>
+              <button type="submit" className="btn primary" disabled={!promptState.multiline && !promptState.value.trim()} data-testid="prompt-ok">{promptState.confirmLabel ?? 'OK'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
       {confirmState && (
         <Modal title={confirmState.title} onClose={() => closeConfirm(false)} size="sm">
           <div className="modal-body">{confirmState.body}</div>

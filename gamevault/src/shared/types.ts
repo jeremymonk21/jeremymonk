@@ -15,7 +15,7 @@ export type GameFormat = 'physical' | 'digital'
 export type SystemKind = 'pc' | 'console' | 'handheld' | 'other'
 
 /** How a copy is launched. `none` means it is a plain collection entry. */
-export type LaunchType = 'none' | 'steam' | 'executable' | 'shortcut'
+export type LaunchType = 'none' | 'steam' | 'executable' | 'shortcut' | 'emulator'
 
 export type CoverFit = 'cover' | 'contain'
 
@@ -56,6 +56,8 @@ export interface GameCopy {
   launchTarget: string
   launchArgs: string
   launchWorkDir: string
+  /** For launchType 'emulator': which emulator setup runs launchTarget (the game file). */
+  emulatorId: number | null
 }
 
 export interface GameImage {
@@ -88,10 +90,76 @@ export interface Game {
   /** Metadata fields the user changed by hand; external refreshes never overwrite them. */
   lockedFields: MetadataField[]
   isSample: boolean
+  /** Marked by the user as "want to play next". Cleared automatically when set to Playing. */
+  backlog: boolean
+  /** On the wishlist (not owned yet). Wishlist games are kept out of the collection, counts and stats. */
+  wishlist: boolean
   genreIds: number[]
   categoryIds: number[]
+  collectionIds: number[]
   copies: GameCopy[]
   images: GameImage[]
+  /** Wide background art and transparent logo, used by Big Picture. */
+  heroFile: string | null
+  logoFile: string | null
+  igdbId: number | null
+  /** YouTube video ids (trailers) from IGDB. */
+  videoIds: string[]
+  /** The user's own video clip, stored in the data folder. */
+  clipFile: string | null
+  /** Seconds tracked by GameVault plus minutes imported from Steam. */
+  playSeconds: number
+  sessionCount: number
+  lastPlayedAt: string | null
+}
+
+export interface Collection {
+  id: number
+  name: string
+  coverFile: string | null
+  sortOrder: number
+}
+
+export interface Emulator {
+  id: number
+  name: string
+  systemId: number
+  exePath: string
+  /** Arguments; {file} is replaced with the game file path. */
+  args: string
+  gamesFolder: string
+  /** Comma-separated file extensions to scan for, e.g. "chd,cue,m3u". */
+  extensions: string
+  /** Optional folder that must contain BIOS files (shown as a warning when empty). */
+  biosFolder: string
+}
+
+export interface ScanCandidate {
+  file: string
+  fileName: string
+  guessedTitle: string
+  emulatorId: number
+  systemId: number
+}
+
+export interface PlaySession {
+  gameId: number
+  startedAt: string
+  seconds: number
+}
+
+export interface Stats {
+  owned: number
+  completed: number
+  backlog: number
+  wishlist: number
+  /** Hours per month for the chosen range (oldest first). */
+  months: Array<{ label: string; hours: number }>
+  totalHours: number
+  totalSeconds: number
+  gamesPlayed: number
+  perSystem: Array<{ name: string; count: number }>
+  topPlayed: Array<{ gameId: number; title: string; system: string; hours: number; seconds: number }>
 }
 
 export interface Library {
@@ -99,6 +167,8 @@ export interface Library {
   systems: GameSystem[]
   genres: Tag[]
   categories: Tag[]
+  collections: Collection[]
+  emulators: Emulator[]
   dataDir: string
   hasSamples: boolean
 }
@@ -113,6 +183,7 @@ export interface CopyInput {
   launchTarget: string
   launchArgs: string
   launchWorkDir: string
+  emulatorId?: number | null
 }
 
 export interface GameInput {
@@ -137,6 +208,14 @@ export interface GameInput {
   categoryIds: number[]
   copies: CopyInput[]
   imageFiles: string[]
+  backlog?: boolean
+  wishlist?: boolean
+  collectionIds?: number[]
+  heroFile?: string | null
+  logoFile?: string | null
+  igdbId?: number | null
+  videoIds?: string[]
+  clipFile?: string | null
   lockedFields?: MetadataField[]
   /** Fields whose value came straight from an online lookup; these are not locked as manual edits. */
   sourceFields?: MetadataField[]
@@ -161,6 +240,9 @@ export interface GamePatch {
   notes?: string
   playStatus?: PlayStatus
   categoryIds?: number[]
+  backlog?: boolean
+  wishlist?: boolean
+  collectionIds?: number[]
 }
 
 export type LaunchState =
@@ -222,3 +304,16 @@ export interface BackupResult {
   path?: string
   message: string
 }
+
+/** App-wide preferences stored in the database (and so included in backups). */
+export interface AppPrefs {
+  startInBigPicture: boolean
+  /** Folder of the user's own music for Big Picture ('' = no music). */
+  musicFolder: string
+  /** 0–1 */
+  musicVolume: number
+  /** Play IGDB trailers (YouTube, online only) in Big Picture. */
+  playTrailers: boolean
+}
+
+export const DEFAULT_PREFS: AppPrefs = { startInBigPicture: false, musicFolder: '', musicVolume: 0.35, playTrailers: true }

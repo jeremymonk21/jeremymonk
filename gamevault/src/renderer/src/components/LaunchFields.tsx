@@ -1,5 +1,6 @@
 import type { CopyInput, Game, GameInput, LaunchType } from '@shared/types'
 import { IconFolder } from './Icons'
+import { useApp } from '../state'
 
 export function gameToInput(g: Game, genreNames: string[]): GameInput {
   return {
@@ -22,7 +23,15 @@ export function gameToInput(g: Game, genreNames: string[]): GameInput {
     categoryIds: g.categoryIds,
     copies: g.copies.map((c) => ({ ...c })),
     imageFiles: g.images.map((i) => i.file),
-    lockedFields: g.lockedFields
+    lockedFields: g.lockedFields,
+    backlog: g.backlog,
+    wishlist: g.wishlist,
+    collectionIds: g.collectionIds,
+    heroFile: g.heroFile,
+    logoFile: g.logoFile,
+    igdbId: g.igdbId,
+    videoIds: g.videoIds,
+    clipFile: g.clipFile
   }
 }
 
@@ -30,11 +39,14 @@ export const LAUNCH_LABELS: Record<LaunchType, string> = {
   none: 'Not launchable (collection entry only)',
   steam: 'Steam (steam:// launch)',
   executable: 'Program (.exe)',
-  shortcut: 'Windows shortcut (.lnk / .url)'
+  shortcut: 'Windows shortcut (.lnk / .url)',
+  emulator: 'Emulator (game file)'
 }
 
 /** Editor for a copy's launch configuration. */
 export function LaunchFields({ copy, onChange, isPc }: { copy: CopyInput; onChange: (c: CopyInput) => void; isPc: boolean }): JSX.Element {
+  const { lib, systemsById } = useApp()
+  const emulators = (lib?.emulators ?? []).slice().sort((a, b) => (a.systemId === copy.systemId ? -1 : 0) - (b.systemId === copy.systemId ? -1 : 0))
   const set = (p: Partial<CopyInput>): void => onChange({ ...copy, ...p })
   const pickFile = async (): Promise<void> => {
     const f = await window.api.pickLaunchFile()
@@ -42,6 +54,11 @@ export function LaunchFields({ copy, onChange, isPc }: { copy: CopyInput; onChan
       const isShortcut = /\.(lnk|url)$/i.test(f)
       set({ launchTarget: f, launchType: isShortcut ? 'shortcut' : 'executable' })
     }
+  }
+  const pickGameFile = async (): Promise<void> => {
+    const em = emulators.find((e) => e.id === copy.emulatorId)
+    const f = await window.api.pickGameFile(em?.gamesFolder || '')
+    if (f) set({ launchTarget: f })
   }
   const pickDir = async (): Promise<void> => {
     const d = await window.api.pickFolder('Choose the working directory')
@@ -60,6 +77,27 @@ export function LaunchFields({ copy, onChange, isPc }: { copy: CopyInput; onChan
         </select>
         {!isPc && copy.launchType === 'none' && <span className="hint">Console entries stay normal collection entries. Only set a launch method if you have a compatible way to play it on this PC (for example an emulator shortcut).</span>}
       </label>
+      {copy.launchType === 'emulator' && (
+        <>
+          <label className="field">
+            Emulator
+            <select className="select" value={copy.emulatorId ?? ''} onChange={(e) => set({ emulatorId: e.target.value ? Number(e.target.value) : null })} data-testid="launch-emulator">
+              <option value="">Choose an emulator…</option>
+              {emulators.map((em) => (
+                <option key={em.id} value={em.id}>{em.name}{systemsById.get(em.systemId) ? ` — ${systemsById.get(em.systemId)?.name}` : ''}</option>
+              ))}
+            </select>
+            {emulators.length === 0 && <span className="hint">Set up your emulators first in Settings & Data → Emulators.</span>}
+          </label>
+          <label className="field">
+            Game file
+            <div className="row">
+              <input className="input" style={{ flex: 1 }} value={copy.launchTarget} onChange={(e) => set({ launchTarget: e.target.value })} placeholder="D:\\Games\\PS1\\Game (USA).chd" data-testid="launch-target" />
+              <button type="button" className="btn" onClick={pickGameFile}><IconFolder size={16} /> Browse…</button>
+            </div>
+          </label>
+        </>
+      )}
       {copy.launchType === 'steam' && (
         <label className="field">
           Steam App ID

@@ -44,7 +44,7 @@ export function SteamImport({ mode, onClose, progress }: { mode: 'library' | 'in
     })
 
   const start = async (): Promise<void> => {
-    const items = (list ?? []).filter((g) => selected.has(g.appId)).map((g) => ({ appId: g.appId, name: g.name, installed: g.installed }))
+    const items = (list ?? []).filter((g) => selected.has(g.appId)).map((g) => ({ appId: g.appId, name: g.name, installed: g.installed, playtimeMinutes: g.playtimeMinutes }))
     if (!items.length) return
     try {
       setStarted(true)
